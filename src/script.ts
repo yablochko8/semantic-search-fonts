@@ -1,10 +1,394 @@
-// import * as fs from "fs/promises";
-// import { clientSupabase } from "./connections/clientSupabase";
-// import { clientMistral } from "./connections/clientMistral";
+import * as fs from "fs/promises";
+import { clientSupabase } from "./connections/clientSupabase";
+import { clientMistral } from "./connections/clientMistral";
+import path from "path";
 
-// const COLORS_CSV_PATH = "src/colornames.csv";
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Returns stringified embeddings, as that's what Supabase will want. Handles batches of inputs.
+ * Returns empty array if there's any error.
+ */
+const getEmbeddings = async (inputs: string[]): Promise<string[]> => {
+  const response = await clientMistral.embeddings.create({
+    model: "mistral-embed",
+    inputs: inputs,
+  });
+
+  const outputs = response.data;
+
+  if (!outputs || outputs.length !== inputs.length) {
+    console.error("Failed to get embedding, ref: ", inputs[0].slice(0, 20));
+    return [];
+  }
+
+  const validOutputs = outputs.filter(
+    (output) => output.object === "embedding" && output.index !== undefined
+  );
+  return validOutputs.map((output) => JSON.stringify(output.embedding));
+};
+
+type MetadataPbFont = {
+  weight: string | null;
+  style: string | null;
+  full_name: string | null;
+  filename: string | null;
+  copyright: string | null;
+};
+
+type MetadataPbInfo = {
+  date_added: Date | null;
+  name: string;
+  designer: string | null;
+  license: string | null;
+  fonts: MetadataPbFont[];
+  category: string | null;
+  stroke: string | null;
+  subsets: string[] | null;
+};
+
+type FontBasicInfo = {
+  published_at: Date | null;
+  name: string;
+  designer: string | null;
+  license: string | null;
+  copyright: string | null;
+  category: string | null;
+  stroke: string | null;
+  subsets: string[] | null;
+  default_weight: number | null;
+  filename: string | null;
+  additional_weights: number[] | null;
+  min_weight: number | null;
+  max_weight: number | null;
+  is_variable: boolean | null;
+  has_italic: boolean | null;
+};
+
+// // Alternative cleaner parser using a more structured approach
+// const parsePbFileStructured = (content: string): MetadataPbInfo => {
+//   const result: MetadataPbInfo = {
+//     date_added: null,
+//     name: "",
+//     designer: null,
+//     license: null,
+//     fonts: [],
+//     category: null,
+//     stroke: null,
+//     subsets: null,
+//   };
+
+//   // Split into lines and filter empty ones
+//   const lines = content.split("\n").filter((line) => line.trim());
+
+//   let currentFont: MetadataPbFont | null = null;
+//   let inFontsBlock = false;
+
+//   for (const line of lines) {
+//     const trimmed = line.trim();
+//     if (!trimmed) continue;
+
+//     // Handle block boundaries
+//     if (trimmed === "fonts {") {
+//       inFontsBlock = true;
+//       currentFont = {
+//         weight: null,
+//         style: null,
+//         full_name: null,
+//         filename: null,
+//         copyright: null,
+//       };
+//       continue;
+//     }
+
+//     if (trimmed === "}") {
+//       if (inFontsBlock && currentFont) {
+//         result.fonts.push(currentFont);
+//         currentFont = null;
+//       }
+//       inFontsBlock = false;
+//       continue;
+//     }
+
+//     // Parse key-value pairs
+//     const colonIndex = trimmed.indexOf(":");
+//     if (colonIndex === -1) continue;
+
+//     const key = trimmed.substring(0, colonIndex).trim();
+//     const value = trimmed
+//       .substring(colonIndex + 1)
+//       .trim()
+//       .replace(/^"|"$/g, "");
+
+//     if (inFontsBlock && currentFont) {
+//       // Handle font properties
+//       if (key in currentFont) {
+//         (currentFont as any)[key] = value;
+//       }
+//     } else {
+//       // Handle top-level properties
+//       switch (key) {
+//         case "name":
+//           result.name = value;
+//           break;
+//         case "designer":
+//           result.designer = value;
+//           break;
+//         case "license":
+//           result.license = value;
+//           break;
+//         case "category":
+//           result.category = value;
+//           break;
+//         case "stroke":
+//           result.stroke = value;
+//           break;
+//         case "date_added":
+//           result.date_added = new Date(value);
+//           break;
+//         case "subsets":
+//           if (!result.subsets) result.subsets = [];
+//           result.subsets.push(value);
+//           break;
+//       }
+//     }
+//   }
+
+//   return result;
+// };
+
+// // Original parser (kept for comparison)
+// const parsePbFile = (content: string): MetadataPbInfo => {
+//   // Parse the protobuf-style metadata
+//   const lines = content.split("\n").filter((line) => line.trim());
+//   const result: MetadataPbInfo = {
+//     date_added: null,
+//     name: "",
+//     designer: null,
+//     license: null,
+//     fonts: [],
+//     category: null,
+//     stroke: null,
+//     subsets: null,
+//   };
+
+//   let currentFont: MetadataPbFont = {
+//     weight: null,
+//     style: null,
+//     full_name: null,
+//     filename: null,
+//     copyright: null,
+//   };
+//   let inFontsBlock = false;
+
+//   for (const line of lines) {
+//     const trimmed = line.trim();
+//     if (!trimmed) continue;
+
+//     // Check if we're entering a fonts block
+//     if (trimmed === "fonts {") {
+//       inFontsBlock = true;
+//       currentFont = {
+//         weight: null,
+//         style: null,
+//         full_name: null,
+//         filename: null,
+//         copyright: null,
+//       };
+//       continue;
+//     }
+
+//     // Check if we're exiting a fonts block
+//     if (trimmed === "}") {
+//       if (inFontsBlock) {
+//         inFontsBlock = false;
+//         result.fonts.push(currentFont);
+//       }
+//       continue;
+//     }
+
+//     // Parse key-value pairs
+//     const colonIndex = trimmed.indexOf(":");
+//     if (colonIndex !== -1) {
+//       const key = trimmed.substring(0, colonIndex).trim();
+//       const value = trimmed.substring(colonIndex + 1).trim();
+
+//       // Remove quotes if present
+//       const cleanValue = value.replace(/^"|"$/g, "");
+
+//       if (inFontsBlock) {
+//         currentFont[key as keyof MetadataPbFont] = cleanValue;
+//       } else {
+//         // Handle repeated fields like subsets
+//         if (key === "subsets") {
+//           if (!result.subsets) result.subsets = [];
+//           result.subsets.push(cleanValue);
+//         } else {
+//           (result as any)[key] = cleanValue;
+//         }
+//       }
+//     }
+//   }
+
+//   return result;
+// };
+
+// Parse as JSON (simplest and safest)
+const parsePbFileAsJson = (content: string): MetadataPbInfo => {
+  // Parse the content line by line to build a proper JSON structure
+  const lines = content.split("\n").filter((line) => line.trim());
+  const result: any = {
+    fonts: [],
+    subsets: [],
+  };
+
+  let inFontsBlock = false;
+  let currentFont: any = {};
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Handle fonts block
+    if (trimmed === "fonts {") {
+      inFontsBlock = true;
+      currentFont = {};
+      continue;
+    }
+
+    if (trimmed === "}") {
+      if (inFontsBlock && Object.keys(currentFont).length > 0) {
+        result.fonts.push(currentFont);
+        currentFont = {};
+      }
+      inFontsBlock = false;
+      continue;
+    }
+
+    // Parse key-value pairs
+    const colonIndex = trimmed.indexOf(":");
+    if (colonIndex === -1) continue;
+
+    const key = trimmed.substring(0, colonIndex).trim();
+    const value = trimmed
+      .substring(colonIndex + 1)
+      .trim()
+      .replace(/^"|"$/g, "");
+
+    if (inFontsBlock) {
+      // Handle font properties
+      if (key === "weight") {
+        currentFont[key] = parseInt(value);
+      } else {
+        currentFont[key] = value;
+      }
+    } else {
+      // Handle top-level properties
+      switch (key) {
+        case "name":
+        case "designer":
+        case "license":
+        case "category":
+        case "stroke":
+        case "classifications":
+        case "date_added":
+          result[key] = value;
+          break;
+        case "subsets":
+          result.subsets.push(value);
+          break;
+      }
+    }
+  }
+
+  // Convert to our expected format
+  const parsed: MetadataPbInfo = {
+    date_added: result.date_added ? new Date(result.date_added) : null,
+    name: result.name || "",
+    designer: result.designer || null,
+    license: result.license || null,
+    fonts: result.fonts || [],
+    category: result.category || null,
+    stroke: result.stroke || null,
+    subsets: result.subsets.length > 0 ? result.subsets : null,
+  };
+
+  return parsed;
+};
+
+const testParsePbFileAsJson = async () => {
+  const metadata = await fs.readFile(
+    path.join(
+      __dirname,
+      "../../cloned-projects/fonts/apache/aclonica/METADATA.pb"
+    ),
+    "utf8"
+  );
+  const parsedData = await parsePbFileAsJson(metadata);
+  console.log("complete");
+  console.log(parsedData);
+};
+
+testParsePbFileAsJson();
+
+// const scrapeFontData = async (folderPath: string): Promise<FontBasicInfo> => {
+//   const files = await fs.readdir(folderPath);
+//   const fontFiles = files.filter((file) => file.endsWith(".ttf"));
+//   const metadataFile = files.find((file) => file.endsWith(".pb"));
+//   if (!metadataFile || !fontFiles.length) {
+//     throw new Error("No metadata file found");
+//   }
+
+//   const name = metadataFile.split(".")[0];
+
+//   const metadata = await fs.readFile(
+//     path.join(folderPath, metadataFile),
+//     "utf8"
+//   );
+
+//   const parsedData = parsePbFileAsJson(metadata);
+
+//   // Extract font information from the first font in the fonts array
+//   const firstFont = parsedData.fonts?.[0] || {};
+
+//   // Parse date if present
+//   let published_at: Date | null = null;
+//   if (parsedData.date_added) {
+//     try {
+//       published_at = new Date(parsedData.date_added);
+//     } catch (e) {
+//       published_at = null;
+//     }
+//   }
+
+//   // Parse numeric values
+//   const default_weight = firstFont.weight ? parseInt(firstFont.weight) : null;
+//   const min_weight = default_weight;
+//   const max_weight = default_weight;
+
+//   // Determine if font has italic
+//   const has_italic =
+//     firstFont.style === "italic" ||
+//     firstFont.full_name?.toLowerCase().includes("italic") ||
+//     false;
+
+//   return {
+//     published_at,
+//     name: parsedData.name || name,
+//     designer: parsedData.designer || null,
+//     license: parsedData.license || null,
+//     copyright: firstFont.copyright || null,
+//     category: parsedData.category || null,
+//     stroke: parsedData.stroke || null,
+//     subsets: parsedData.subsets || null,
+//     default_weight,
+//     filename: firstFont.filename || null,
+//     additional_weights: null, // Would need to parse all fonts to determine this
+//     min_weight,
+//     max_weight,
+//     is_variable: false, // Would need additional logic to determine this
+//     has_italic,
+//   };
+// };
 
 // const getColorNames = async (
 //   filePath: string,
@@ -26,37 +410,6 @@
 // type MistralUpdate = {
 //   name: string;
 //   embedding_mistral_1024: string;
-// };
-
-// const getEmbeddingMistral = async (
-//   inputs: string[]
-// ): Promise<MistralUpdate[]> => {
-//   const response = await clientMistral.embeddings.create({
-//     model: "mistral-embed",
-//     inputs: inputs,
-//   });
-
-//   const outputs = response.data;
-
-//   if (!outputs || outputs.length === 0) {
-//     console.error(
-//       "No embedding in response from mistral-embed, for query starting with: ",
-//       inputs.slice(0, 20)
-//     );
-//     return [];
-//   }
-//   //   for (const output of outputs) {
-//   //     console.log(
-//   //       `Output ${output.index} is ${output.object} with length ${output.embedding?.length}`
-//   //     );
-//   //   }
-//   const validOutputs = outputs.filter(
-//     (output) => output.object === "embedding" && output.index !== undefined
-//   );
-//   return validOutputs.map((output) => ({
-//     name: inputs[output.index!],
-//     embedding_mistral_1024: JSON.stringify(output.embedding),
-//   }));
 // };
 
 // const saveEmbeddingsToDB = async (updates: MistralUpdate[]) => {
@@ -176,15 +529,6 @@
 //   const validHex = rawColor.hex.length === 7 && rawColor.hex.startsWith("#");
 //   const validIsGoodName = typeof rawColor.is_good_name === "boolean";
 //   return validName && validHex && validIsGoodName;
-// };
-
-// const getEmbedding = async (inputText: string): Promise<number[]> => {
-//   const embedding = await clientOpenai.embeddings.create({
-//     model: "text-embedding-3-small",
-//     input: inputText,
-//     encoding_format: "float", // We would potentially prefer a string here to match Supabase expectation, but OpenAI only supports "float" | "base64" | undefined
-//   });
-//   return embedding.data[0].embedding;
 // };
 
 // const prepColorEntry = async (rawColor: RawColor): Promise<PreppedColor> => {
