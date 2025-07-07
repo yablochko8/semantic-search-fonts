@@ -2,7 +2,7 @@
 
 ### How to create a semantic search engine for fonts using Google Fonts, Supabase, and Mistral
 
-This cookbook will assume you know your way around these tools. For a more accessible tutorial on semantic search, check out my guide on how to [build your own color search engine](https://lui.ie/guides/semantic-search-colors) which is a bit more beginner-friendly.
+This cookbook will assume you know your way around these tools. For a more accessible tutorial on semantic search, check out my guide on how to [build your own color search engine](https://lui.ie/guides/semantic-search-colors) which is a bit more beginner-friendly. This time I'll only use Mistral. I split default queries to Color Genie randomly between OpenAI and Mistral. Round trip to fetch the embedding is only 368ms from Mistral, 649ms from OpenAI. Querying the index the times are about the same, close to 330ms.
 
 The use case: you're creating a website or logo and you need a font that captures something abstract like "silent sophistication" or "crisp clean with a little bit of soul". You can click around on Google Fonts, but the search function there seems to expect you to know the names of the fonts. You don't know the names of the fonts, that's why you're searching!
 
@@ -14,19 +14,69 @@ https://brandmint.ai/font-finder
 
 You can build one too! Here's how:
 
-## Step 0 - Have some source data
+## Step 0 - Understand how the source data is organized
 
 For this font search engine the source data is from [the github repo for Google Fonts](https://github.com/google/fonts), which is licensed under various permissive licenses.
 
-This data has this structure:
+### Repo Structure
+
+The fonts in this project are organized by license type.
+
+- `ofl/` – Fonts under the SIL Open Font License 1.1. This is the majority of fonts on Google Fonts
+- `apache/` – Fonts under the Apache License 2.0
+- `ufl/` – Fonts under the Ubuntu Font License 1.0 (used mainly by the Ubuntu font family)
+
+Very interesting!
+
+- `tags/` - Contains classification tags for fonts. (This is a newer addition.) For example, it may include files categorizing fonts by characteristics like writing system, style, or other attributes (commits reference items like stroke width tags). This helps in aggregating fonts by design traits.
+
+Two folders of downstream content from internal Google repos that may be useful:
+
+- `axisregistry/` - Metadata for the Google Fonts Axis Registry, which defines supported variable font axes (name, ranges, defaults, etc.) for the collection
+- `lang/` – Language support data module (another subtree, from googlefonts/lang). It contains data on languages, scripts, and regions used to classify fonts’ language support on Google Fonts.
+  This provides data about languages, scripts, and regions and which fonts cover which characters. Google Fonts uses this to tag fonts with the languages they support (e.g., “Latin, Cyrillic, Greek”). The data comes from the googlefonts/lang project and helps categorize fonts by languages. If we want to allow filtering by language or needs to list which writing systems a font supports, this is a valuable resource.
+
+We're not too concerned with the other folders that hold educational material (`cc-by-sa/`), designer background (`catalog/`)
+
+### Structure Within Font Folders
+
+Within each license directory (ofl/, apache/, ufl/), font families are organized by family name. Each family has its own subfolder named after the font family. Folder naming conventions for families generally use lowercase letters and no spaces or special characters (often just removing spaces from the font's name). For example, "Open Sans" is found in ofl/opensans/
+
+Each font family folder typically contains:
+
+- FontFamily-Style.ttf (e.g. MaidenOrange-Regular.ttf): The actual font binaries for each style
+
+  - Static fonts named like: FontFamily-Regular.ttf, FontFamily-Bold.ttf
+  - Variable fonts named like: FontFamily[wdth,wght].ttf (with axis tags in brackets)
+
+- METADATA.pb: Machine-readable metadata including:
+
+  - Family name and available styles
+  - Designer/foundry info
+  - License type
+  - Category (Sans-serif, Serif, Display, etc.)
+  - Language/script support
+  - Version info
+  - **METADATA.pb is the authoritative source for building an index of the fonts. Iit can tell us the family’s name, styles available, designer, license, and classification.**
+
+- DESCRIPTION.en_us.html: English description of the font family, typically a paragraph or two about its history and design. Some of these descriptions are quite sweet.
+
+  - "Maiden Orange is a light and festive slab serif font inspired by custom hand lettered 1950s advertisements."
+  - "Kosugi is a Gothic design, [...] it evokes the Japanese cedar trees that have straight and thick trunks and branches."
+
+- LICENSE.txt: The full license text (may be OFL.txt, UFL.txt depending on license type). These are all standardized based on parent folders, so for our purpose just a descriptor of the license should be sufficient.
+
+There seems to be some variance between folders, but the vast majority of folders I explored had the above structure, so that' should be enough for us to work with.
 
 TODO EXPAND HERE
 
-## Step 1 - Create a PostgreSQL Database to hold the data
+## Step 1 - Create Your Postgres Database and Add Vector Extension
+
+If this is a new project:
 
 Supabase > new project > follow the flow to create a new PostgreSQL
 
-Once it exists, the first thing you'll need to do is add the vector extension. In the SQL Editor: choose New SQL Snippet (Execute SQL Queries)
+If this your the first table in your database using vectors, you'll need to add the vector extension. In the SQL Editor: choose New SQL Snippet (Execute SQL Queries)
 
 There are two queries to run here:
 
@@ -48,25 +98,68 @@ For our font data we're going to need the following columns:
 
 - id (number is good for us here)
 - created_at (timestamp defaulting to now - may be useful later if expanding the list)
+- published_at (timestamp of when the font was added to Google Fonts, feels like it might be useful)
 - name (unique string - we don't want duplicate names pointing at different fonts)
-
-TODO EXPAND HERE
-
+- designer (string)
+- license (string)
+- copyright (string)
+- category (string? e.g. MONOSPACE | DISPLAY)
+- stroke (string e.g. SANS_SERIF | SERIF)
+- subsets (string array e.g. cyrillic, greek-ext, menu)
+- default weight (number - for statics)
+- filename (string - for statics this shows the default)
+- additional weights (number array - for statics that have options)
+- min_weight (number - for variables, based on `wght` axis range)
+- max_weight (number - for variables, based on `wght` axis range)
+- is_variable (boolean)
+- has_italic (boolean)
+- summary_text_v1 (string - this is what we'll transform into a vector)
 - embedding_mistral_v1 (vector with 1024 dimensions)
 
 Here's the SQL:
 
 ```sql
-create table public.fonts (
-id bigserial primary key,
-created_at timestamp with time zone default now(),
-name text not null unique,
+CREATE TABLE public.fonts (
+    id BIGSERIAL PRIMARY KEY,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    published_at TIMESTAMP WITH TIME ZONE,
 
-TODO EXPAND HERE
+    name TEXT UNIQUE NOT NULL,
+    designer TEXT,
+    license TEXT,
+    copyright TEXT,
 
-embedding_mistral_v1 vector(1024)
+    category TEXT,  -- e.g. MONOSPACE, DISPLAY
+    stroke TEXT,    -- e.g. SANS_SERIF, SERIF
+    subsets TEXT[], -- array of supported subsets
+
+    default_weight INTEGER,
+    filename TEXT,
+
+    additional_weights INTEGER[], -- additional static weights
+
+    min_weight INTEGER, -- for variable fonts
+    max_weight INTEGER,
+
+    is_variable BOOLEAN DEFAULT FALSE,
+    has_italic BOOLEAN DEFAULT FALSE,
+
+    summary_text_v1 TEXT,
+    embedding_mistral_v1 VECTOR(1024)
 );
 ```
+
+SIDENOTE, These are the standard weights and names:
+
+Thin 100
+ExtraLight 200
+Light 300
+Regular 400
+Medium 500
+SemiBold 600
+Bold 700
+ExtraBold 800
+Black 900
 
 You may get a security warning about Row Level Security. You can manually enable that on the table after creating it, then click "Add RLS Policy". When choosing a policy, I just used the Templates to enable read access for all users.
 
