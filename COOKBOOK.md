@@ -6,7 +6,7 @@ This cookbook will assume you know your way around these tools. For a more acces
 
 The use case: you're creating a website or logo and you need a font that captures something abstract like "silent sophistication" or "crisp clean with a little bit of soul". You can click around on Google Fonts, but the search function there seems to expect you to know the names of the fonts. You don't know the names of the fonts, that's why you're searching!
 
-Strictly speaking we're talking about typefaces, not fonts - a font is a specific weight/style of a typeface family, while a typeface is the overall design. But the distinction has blurred over time and "fonts" just rolls off the tongue more easily, so I'll use that term throughout this guide.
+Strictly speaking we're not talking about fonts (e.g. Arial Italic Size 15) or typefaces (e.g. Arial Italic), but _families of typeface_ (e.g. Arial). But the distinction has blurred over time and "fonts" just rolls off the tongue more easily, so I'll use that term throughout this guide.
 
 I couldn't find any existing semantic search engines specifically for fonts, so I built one:
 
@@ -26,17 +26,16 @@ The fonts in this project are organized by license type.
 - `apache/` – Fonts under the Apache License 2.0
 - `ufl/` – Fonts under the Ubuntu Font License 1.0 (used mainly by the Ubuntu font family)
 
-Very interesting!
+TBD on this one...
 
 - `tags/` - Contains classification tags for fonts. (This is a newer addition.) For example, it may include files categorizing fonts by characteristics like writing system, style, or other attributes (commits reference items like stroke width tags). This helps in aggregating fonts by design traits.
 
-Two folders of downstream content from internal Google repos that may be useful:
+There are lots of other folders that seem promising but are distractions for our simple build. If you're curious:
 
-- `axisregistry/` - Metadata for the Google Fonts Axis Registry, which defines supported variable font axes (name, ranges, defaults, etc.) for the collection
-- `lang/` – Language support data module (another subtree, from googlefonts/lang). It contains data on languages, scripts, and regions used to classify fonts’ language support on Google Fonts.
-  This provides data about languages, scripts, and regions and which fonts cover which characters. Google Fonts uses this to tag fonts with the languages they support (e.g., “Latin, Cyrillic, Greek”). The data comes from the googlefonts/lang project and helps categorize fonts by languages. If we want to allow filtering by language or needs to list which writing systems a font supports, this is a valuable resource.
-
-We're not too concerned with the other folders that hold educational material (`cc-by-sa/`), designer background (`catalog/`)
+- `axisregistry/` - Downstream version of a Google repo which defines deeper variable support for some fonts
+- `lang/` – Downstream version of a Google repo that contains data on languages, scripts, and regions used to classify fonts’ language support on Google Fonts.
+- `cc-by-sa/` - Educational material
+- `catalog/` - Background info on specific font designers
 
 ### Structure Within Font Folders
 
@@ -94,25 +93,19 @@ Even though you've just added the `extensions` schema to support vectors, the `f
 
 Supabase does have a UI for creating a new Table but it doesn't let you specify vector size, so you'll need to do this with a SQL command.
 
-For our font data we're going to need the following columns:
+For our font data we're going to keep it as tight as we can while still providing a good search experience:
 
 - id (number is good for us here)
 - created_at (timestamp defaulting to now - may be useful later if expanding the list)
-- published_at (timestamp of when the font was added to Google Fonts, feels like it might be useful)
 - name (unique string - we don't want duplicate names pointing at different fonts)
+- url (string)
 - designer (string)
+- year (number - just the year when the font was added to Google Fonts)
 - license (string)
 - copyright (string)
 - category (string? e.g. MONOSPACE | DISPLAY)
 - stroke (string e.g. SANS_SERIF | SERIF)
-- subsets (string array e.g. cyrillic, greek-ext, menu)
-- default weight (number - for statics)
-- filename (string - for statics this shows the default)
-- additional weights (number array - for statics that have options)
-- min_weight (number - for variables, based on `wght` axis range)
-- max_weight (number - for variables, based on `wght` axis range)
-- is_variable (boolean)
-- has_italic (boolean)
+- ai_descriptors (string)
 - summary_text_v1 (string - this is what we'll transform into a vector)
 - embedding_mistral_v1 (vector with 1024 dimensions)
 
@@ -122,44 +115,36 @@ Here's the SQL:
 CREATE TABLE public.fonts (
     id BIGSERIAL PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    published_at TIMESTAMP WITH TIME ZONE,
 
     name TEXT UNIQUE NOT NULL,
+    url TEXT,
     designer TEXT,
+    year INTEGER,
     license TEXT,
     copyright TEXT,
 
     category TEXT,  -- e.g. MONOSPACE, DISPLAY
     stroke TEXT,    -- e.g. SANS_SERIF, SERIF
-    subsets TEXT[], -- array of supported subsets
-
-    default_weight INTEGER,
-    filename TEXT,
-
-    additional_weights INTEGER[], -- additional static weights
-
-    min_weight INTEGER, -- for variable fonts
-    max_weight INTEGER,
-
-    is_variable BOOLEAN DEFAULT FALSE,
-    has_italic BOOLEAN DEFAULT FALSE,
+    ai_descriptors TEXT,
 
     summary_text_v1 TEXT,
     embedding_mistral_v1 VECTOR(1024)
 );
 ```
 
-SIDENOTE, These are the standard weights and names:
+SIDENOTE: it does hurt to treat each family of Typefaces as a single unit. Typically a font family will support some or all of these weights:
 
-Thin 100
-ExtraLight 200
-Light 300
-Regular 400
-Medium 500
-SemiBold 600
-Bold 700
-ExtraBold 800
-Black 900
+- Thin 100
+- ExtraLight 200
+- Light 300
+- Regular 400
+- Medium 500
+- SemiBold 600
+- Bold 700
+- ExtraBold 800
+- Black 900
+
+And of course there is a huge difference between ExtraLight Arial and ExtraBold Arial, but if there's user demand for more granular entries they can be added in a future version.
 
 You may get a security warning about Row Level Security. You can manually enable that on the table after creating it, then click "Add RLS Policy". When choosing a policy, I just used the Templates to enable read access for all users.
 
