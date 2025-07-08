@@ -27,308 +27,96 @@ const getEmbeddings = async (inputs: string[]): Promise<string[]> => {
   return validOutputs.map((output) => JSON.stringify(output.embedding));
 };
 
-type MetadataPbFont = {
-  weight: string | null;
-  style: string | null;
-  full_name: string | null;
-  filename: string | null;
-  copyright: string | null;
+type FontBasics = {
+  name: string; // from METADATA.pb
+  category: string | null; // from METADATA.pb (includes classifications here, space separated if multiple)
+  copyright: string | null; // from METADATA.pb > fonts[0]
+  designer: string | null; // from METADATA.pb
+  license: string | null; // from METADATA.pb
+  stroke: string | null; // from METADATA.pb
+  year: number | null; // from METADATA.pb (first four digits of date_added)
 };
 
-type MetadataPbInfo = {
-  date_added: Date | null;
-  name: string;
-  designer: string | null;
-  license: string | null;
-  fonts: MetadataPbFont[];
-  category: string | null;
-  stroke: string | null;
-  subsets: string[] | null;
+type FontEnrichmentReady = FontBasics & {
+  url: string | null; // Can be constructed from name, separated by +, e.g.: https://fonts.googleapis.com/css2?family=Family+Name&display=swap
+  description_p1: string | null; // Take the first <p> element of DESCRIPTION.en_us.html
+  ai_descriptors: string | null; // List of adjectives from multimodal AI assessment of visual
+  summary_text_v1: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
 };
 
-type FontBasicInfo = {
-  published_at: Date | null;
-  name: string;
-  designer: string | null;
-  license: string | null;
-  copyright: string | null;
-  category: string | null;
-  stroke: string | null;
-  subsets: string[] | null;
-  default_weight: number | null;
-  filename: string | null;
-  additional_weights: number[] | null;
-  min_weight: number | null;
-  max_weight: number | null;
-  is_variable: boolean | null;
-  has_italic: boolean | null;
+type FontDBReady = FontEnrichmentReady & {
+  embedding_mistral_v1: string;
 };
 
-// // Alternative cleaner parser using a more structured approach
-// const parsePbFileStructured = (content: string): MetadataPbInfo => {
-//   const result: MetadataPbInfo = {
-//     date_added: null,
-//     name: "",
-//     designer: null,
-//     license: null,
-//     fonts: [],
-//     category: null,
-//     stroke: null,
-//     subsets: null,
-//   };
+const getUrlFromName = (name: string) =>
+  `https://fonts.googleapis.com/css2?family=${name.replace(/\s+/g, "+")}`;
 
-//   // Split into lines and filter empty ones
-//   const lines = content.split("\n").filter((line) => line.trim());
+const stripQuotes = (str: string | undefined) => str?.replace(/^"|"$/g, "");
 
-//   let currentFont: MetadataPbFont | null = null;
-//   let inFontsBlock = false;
-
-//   for (const line of lines) {
-//     const trimmed = line.trim();
-//     if (!trimmed) continue;
-
-//     // Handle block boundaries
-//     if (trimmed === "fonts {") {
-//       inFontsBlock = true;
-//       currentFont = {
-//         weight: null,
-//         style: null,
-//         full_name: null,
-//         filename: null,
-//         copyright: null,
-//       };
-//       continue;
-//     }
-
-//     if (trimmed === "}") {
-//       if (inFontsBlock && currentFont) {
-//         result.fonts.push(currentFont);
-//         currentFont = null;
-//       }
-//       inFontsBlock = false;
-//       continue;
-//     }
-
-//     // Parse key-value pairs
-//     const colonIndex = trimmed.indexOf(":");
-//     if (colonIndex === -1) continue;
-
-//     const key = trimmed.substring(0, colonIndex).trim();
-//     const value = trimmed
-//       .substring(colonIndex + 1)
-//       .trim()
-//       .replace(/^"|"$/g, "");
-
-//     if (inFontsBlock && currentFont) {
-//       // Handle font properties
-//       if (key in currentFont) {
-//         (currentFont as any)[key] = value;
-//       }
-//     } else {
-//       // Handle top-level properties
-//       switch (key) {
-//         case "name":
-//           result.name = value;
-//           break;
-//         case "designer":
-//           result.designer = value;
-//           break;
-//         case "license":
-//           result.license = value;
-//           break;
-//         case "category":
-//           result.category = value;
-//           break;
-//         case "stroke":
-//           result.stroke = value;
-//           break;
-//         case "date_added":
-//           result.date_added = new Date(value);
-//           break;
-//         case "subsets":
-//           if (!result.subsets) result.subsets = [];
-//           result.subsets.push(value);
-//           break;
-//       }
-//     }
-//   }
-
-//   return result;
-// };
-
-// // Original parser (kept for comparison)
-// const parsePbFile = (content: string): MetadataPbInfo => {
-//   // Parse the protobuf-style metadata
-//   const lines = content.split("\n").filter((line) => line.trim());
-//   const result: MetadataPbInfo = {
-//     date_added: null,
-//     name: "",
-//     designer: null,
-//     license: null,
-//     fonts: [],
-//     category: null,
-//     stroke: null,
-//     subsets: null,
-//   };
-
-//   let currentFont: MetadataPbFont = {
-//     weight: null,
-//     style: null,
-//     full_name: null,
-//     filename: null,
-//     copyright: null,
-//   };
-//   let inFontsBlock = false;
-
-//   for (const line of lines) {
-//     const trimmed = line.trim();
-//     if (!trimmed) continue;
-
-//     // Check if we're entering a fonts block
-//     if (trimmed === "fonts {") {
-//       inFontsBlock = true;
-//       currentFont = {
-//         weight: null,
-//         style: null,
-//         full_name: null,
-//         filename: null,
-//         copyright: null,
-//       };
-//       continue;
-//     }
-
-//     // Check if we're exiting a fonts block
-//     if (trimmed === "}") {
-//       if (inFontsBlock) {
-//         inFontsBlock = false;
-//         result.fonts.push(currentFont);
-//       }
-//       continue;
-//     }
-
-//     // Parse key-value pairs
-//     const colonIndex = trimmed.indexOf(":");
-//     if (colonIndex !== -1) {
-//       const key = trimmed.substring(0, colonIndex).trim();
-//       const value = trimmed.substring(colonIndex + 1).trim();
-
-//       // Remove quotes if present
-//       const cleanValue = value.replace(/^"|"$/g, "");
-
-//       if (inFontsBlock) {
-//         currentFont[key as keyof MetadataPbFont] = cleanValue;
-//       } else {
-//         // Handle repeated fields like subsets
-//         if (key === "subsets") {
-//           if (!result.subsets) result.subsets = [];
-//           result.subsets.push(cleanValue);
-//         } else {
-//           (result as any)[key] = cleanValue;
-//         }
-//       }
-//     }
-//   }
-
-//   return result;
-// };
-
-// Parse as JSON (simplest and safest)
-const parsePbFileAsJson = (content: string): MetadataPbInfo => {
-  // Parse the content line by line to build a proper JSON structure
+const parseFontBasicsFromPb = (content: string): FontBasics | null => {
   const lines = content.split("\n").filter((line) => line.trim());
-  const result: any = {
-    fonts: [],
-    subsets: [],
+
+  // Split each line into key-value pairs
+  // If the key has already been seen ignore future mentions of, we only care about the first mention
+  const keyValuePairs = lines.map((line) => {
+    const [key, value] = line.split(":").map((s) => s.trim());
+    return { key, value };
+  });
+
+  const getFirstValue = (key: string): string | null =>
+    stripQuotes(keyValuePairs.find((pair) => pair.key === key)?.value) || null;
+
+  const name = getFirstValue("name");
+  const category = getFirstValue("category");
+  const copyright = getFirstValue("copyright");
+  const designer = getFirstValue("designer");
+  const license = getFirstValue("license");
+  const stroke = getFirstValue("stroke");
+  const year = getFirstValue("date_added")
+    ? parseInt(getFirstValue("date_added")?.substring(0, 4) || "0")
+    : null;
+
+  if (!name) return null;
+
+  return {
+    name,
+    category,
+    copyright,
+    designer,
+    license,
+    stroke,
+    year,
   };
-
-  let inFontsBlock = false;
-  let currentFont: any = {};
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    // Handle fonts block
-    if (trimmed === "fonts {") {
-      inFontsBlock = true;
-      currentFont = {};
-      continue;
-    }
-
-    if (trimmed === "}") {
-      if (inFontsBlock && Object.keys(currentFont).length > 0) {
-        result.fonts.push(currentFont);
-        currentFont = {};
-      }
-      inFontsBlock = false;
-      continue;
-    }
-
-    // Parse key-value pairs
-    const colonIndex = trimmed.indexOf(":");
-    if (colonIndex === -1) continue;
-
-    const key = trimmed.substring(0, colonIndex).trim();
-    const value = trimmed
-      .substring(colonIndex + 1)
-      .trim()
-      .replace(/^"|"$/g, "");
-
-    if (inFontsBlock) {
-      // Handle font properties
-      if (key === "weight") {
-        currentFont[key] = parseInt(value);
-      } else {
-        currentFont[key] = value;
-      }
-    } else {
-      // Handle top-level properties
-      switch (key) {
-        case "name":
-        case "designer":
-        case "license":
-        case "category":
-        case "stroke":
-        case "classifications":
-        case "date_added":
-          result[key] = value;
-          break;
-        case "subsets":
-          result.subsets.push(value);
-          break;
-      }
-    }
-  }
-
-  // Convert to our expected format
-  const parsed: MetadataPbInfo = {
-    date_added: result.date_added ? new Date(result.date_added) : null,
-    name: result.name || "",
-    designer: result.designer || null,
-    license: result.license || null,
-    fonts: result.fonts || [],
-    category: result.category || null,
-    stroke: result.stroke || null,
-    subsets: result.subsets.length > 0 ? result.subsets : null,
-  };
-
-  return parsed;
 };
 
-const testParsePbFileAsJson = async () => {
-  const metadata = await fs.readFile(
+const parseP1FromHtml = (content: string): string | null => {
+  const p1 = content.split("<p>")[1].split("</p>")[0];
+  return p1;
+};
+
+/** Parent script to pull the others together. */
+const scrapeFolder = async (folderPath: string) => {
+  const pbMetadata = await fs.readFile(
     path.join(
       __dirname,
-      "../../cloned-projects/fonts/apache/aclonica/METADATA.pb"
+      `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
     ),
     "utf8"
   );
-  const parsedData = await parsePbFileAsJson(metadata);
-  console.log("complete");
-  console.log(parsedData);
+  const fontBasics = parseFontBasicsFromPb(pbMetadata);
+  console.log(fontBasics);
+  const html = await fs.readFile(
+    path.join(
+      __dirname,
+      `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
+    ),
+    "utf8"
+  );
+  const description_p1 = parseP1FromHtml(html);
+  console.log(description_p1);
 };
 
-testParsePbFileAsJson();
+scrapeFolder("apache/aclonica");
 
 // const scrapeFontData = async (folderPath: string): Promise<FontBasicInfo> => {
 //   const files = await fs.readdir(folderPath);

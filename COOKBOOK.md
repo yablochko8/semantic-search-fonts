@@ -123,7 +123,7 @@ CREATE TABLE public.fonts (
     license TEXT,
     copyright TEXT,
 
-    category TEXT,  -- e.g. MONOSPACE, DISPLAY
+    category TEXT,  -- e.g. MONOSPACE, DISPLAY, HANDWRITING, - populate "classifications" here as well (space separated if multiple)
     stroke TEXT,    -- e.g. SANS_SERIF, SERIF
     ai_descriptors TEXT,
 
