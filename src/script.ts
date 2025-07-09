@@ -18,7 +18,7 @@ type FontBasics = {
 };
 
 type FontEnrichmentReady = FontBasics & {
-  url: string | null; // Can be constructed from name, separated by +, e.g.: https://fonts.googleapis.com/css2?family=Family+Name&display=swap
+  url: string | null; // Can be constructed from name, separated by +, e.g.: https://fonts.googleapis.com/css2?family=Family+Name
   description_p1: string | null; // Take the first <p> element of DESCRIPTION.en_us.html
   ai_descriptors: string[]; // List of adjectives from multimodal AI assessment of visual
   summary_text_v1: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
@@ -45,6 +45,21 @@ const cleanAdjective = (adjective: string) =>
     .replace(/[^a-zA-Z ]/g, "")
     .toLowerCase()
     .trim();
+
+const getStringTimestamp = () =>
+  new Date()
+    .toLocaleString("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    .replace(/[/,]/g, "-")
+    .replace(/:/g, "")
+    .replace(/\s/g, "-")
+    .replace(/--/g, "-");
 
 ////////////////////////////////////
 // Single-Stage Functions
@@ -88,7 +103,7 @@ const parseFontBasicsFromPb = (content: string): FontBasics | null => {
 
 const parseP1FromHtml = (content: string): string | null => {
   const p1 = content.split("<p>")[1].split("</p>")[0];
-  // There may be other tags within p1 (e.g. <a>, <br>, <strong> etc) We want to remove the tags, but keep the text.
+  // There may be other tags within p1 (e.g. <a>, <br>, <strong> etc). We want to remove the tags, but keep the text.
   const p1WithoutTags = p1.replace(/<[^>]*>?/g, "");
   return p1WithoutTags;
 };
@@ -322,27 +337,13 @@ const main = async (topLevelFolders: string[]) => {
     `Successfully scraped and saved ${successCount} out of ${totalCount} fonts`
   );
 
-  const dateTime = new Date()
-    .toLocaleString("en-CA", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    })
-    .replace(/[/,]/g, "-")
-    .replace(/:/g, "")
-    .replace(/\s/g, "-")
-    .replace(/--/g, "-");
-
   // Store the results in a file
   await fs.writeFile(
-    path.join(__dirname, `../logs/font-scrape-${dateTime}.json`),
+    path.join(__dirname, `../logs/font-scrape-${getStringTimestamp()}.json`),
     JSON.stringify(results, null, 2)
   );
 };
 
-// main(["ufl", "apache", "ofl"]);
+// To run this, uncomment the line below and then in Terminal: bun src/script.ts
 
-// main(["ofl"]);
+// main(["ufl", "apache", "ofl"]);

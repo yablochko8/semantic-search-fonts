@@ -205,6 +205,21 @@ export type Database = {
           distance: number
         }[]
       }
+      search_embedding_mistral_v1: {
+        Args: { query_embedding: string; match_count?: number }
+        Returns: {
+          name: string
+          category: string
+          copyright: string
+          designer: string
+          license: string
+          stroke: string
+          year: number
+          url: string
+          description_p1: string
+          distance: number
+        }[]
+      }
       search_embedding_openai_1536: {
         Args: { query_embedding: string; match_count?: number }
         Returns: {

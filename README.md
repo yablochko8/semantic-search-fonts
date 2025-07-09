@@ -1,11 +1,11 @@
-# Color Finder
+# Semantic Search for Fonts
 
 A semantic font search engine powered by vector embeddings. Search for fonts (typefaces) using natural language descriptions and get matching font suggestions.
 
 ## Features
 
 - Natural language font search using Mistral embeddings
-- 1,200+ named colors in the database
+- 1,700+ named fonts in the database
 - Fast vector similarity search using PostgreSQL/Supabase
 - Returns font names, details, and similarity scores
 

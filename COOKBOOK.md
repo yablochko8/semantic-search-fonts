@@ -151,30 +151,10 @@ You may get a security warning about Row Level Security. You can manually enable
 
 ## Step 3 - Pull in the data source
 
-Easy route: just copy paste the CSV into your repo and run script from there.
-
-Sidequest: I want to pull in the font list via git so that it's easier to pull in future updates.
-
-TODO CONVERT THIS SECTION TO FONTS
-
-To sync first time:
+The Google Fonts repo on GitHub has all the data we need. We're going to start by cloning that repo locally.
 
 ```sh
-git remote add canonical-color-list https://github.com/meodai/color-names.git
-git fetch canonical-color-list
-git checkout canonical-color-list/main -- src/colornames.csv
-git add src/colornames.csv
-git commit -m "Adding canonical color list from meodai/color-names"
-git push origin main
-```
-
-To update later:
-
-```sh
-git fetch canonical-color-list
-git checkout canonical-color-list/main -- src/colornames.csv
-git commit -m "Update colornames.csv from meodai color-names"
-git push
+git clone https://github.com/google/fonts.git
 ```
 
 ## Step 4 - Connect our codebase to Mistral
@@ -266,132 +246,82 @@ Save that script as a comment in your .env file, you will use it a ton!
 Our `types/supabase.ts` file makes it nice and clear what shape our data needs to be in. So our target state is:
 
 ```ts
-type PreppedFont = {
-  // TODO EXPAND
+type FontDBReady = {
+  name: string;
+  category: string | null;
+  copyright: string | null;
+  designer: string | null;
+  license: string | null;
+  stroke: string | null;
+  year: number | null;
+  url: string | null;
+  description_p1: string | null;
+  ai_descriptors: string[];
+  summary_text_v1: string | null;
+  embedding_mistral_v1: string;
 };
 ```
 
-And our write function is:
+So if we can get our data objects to look like that, we can save them into our database with a super simple `upsert(font, { onConflict: "name" })` command without any mapping of parameters.
+
+However, to assemble this data we need to collect info from a few different places. I like to reflect this in the type structure. It's like we're assembling a car, and the car has to pass through a few stations. At the first station we expect a certain set of pieces to be bolted together. That core will then be passed to the next station which will bolt on some extras, and so on until the car is complete.
+
+In our case, there are three stations:
 
 ```ts
-const saveFontEntry = async (preppedFont: PreppedFont) => {
-  // TODO EXPAND
+type FontBasics = {
+  name: string; // from METADATA.pb
+  category: string | null; // from METADATA.pb (includes classifications here, space separated if multiple)
+  copyright: string | null; // from METADATA.pb > fonts[0]
+  designer: string | null; // from METADATA.pb
+  license: string | null; // from METADATA.pb
+  stroke: string | null; // from METADATA.pb
+  year: number | null; // from METADATA.pb (first four digits of date_added)
+};
+
+type FontEnrichmentReady = FontBasics & {
+  url: string | null; // Can be constructed from name, separated by +, e.g.: https://fonts.googleapis.com/css2?family=Family+Name
+  description_p1: string | null; // Take the first <p> element of DESCRIPTION.en_us.html
+  ai_descriptors: string[]; // List of adjectives from multimodal AI assessment of visual
+  summary_text_v1: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
+};
+
+type FontDBReady = FontEnrichmentReady & {
+  embedding_mistral_v1: string;
 };
 ```
-
-Having uniqueness enforced on the `name` column is handy here, it means we can upsert and use the `name` column to handle accidental rewrites of the same data.
 
 ## Step 7 - Write function to transform source data into DB-ready data
 
-So we need to transform data that looks like this:
+My ETL script for this can be found here:
 
-```csv
-name,hex,good name
-100 Mph,#c93f38,x
+[https://github.com/yablochko8/semantic-search-fonts/blob/main/src/script.ts]
 
-TODO CHANGE THIS
+I've kept it heavily commented so if you're following this guide with the exact same source data now is the time to dive into that code.
 
-```
+## Step 8 - Save our fonts to the database
 
-into this:
+At this point I ran my full ETL script, as there are less than 2,000 entries so it's a small enough dataset that it seemed silly to split it out.
 
-```ts
-{
-  name: "100 Mph";
-  hex: "c93f38";
-  is_good_name: true;
-  embedding_openai_1536: "[-0.022126757,-0.010959357,-0.0027992798,0.019125007,0.017044587,...]";
+## Step 9 - Enjoy the fact that we DON'T need to create an index
 
-  TODO CHANGE THIS
+Because there are fewer than 10,000 entries in this data, we definitely do not need to create an index.
 
+We should get exact results within a few milliseconds. An index would complicate our code and only give us slightly less accurate results.
 
-}
-```
+If you're dealing with a larger dataset, you can see more details on adding an index in [my previous guide](https://lui.ie/guides/semantic-search-colors).
 
-My ETL script for this looked like:
-
-TODO ADD THIS
-
-## Step 8 - Save our first few fonts to the database
-
-At this point I ran my ETL script with `maxRows = 50` just to have something to test against.
-
-## Step 9 - Add a Vector Index to the Database
-
-The command you will want to run looks something like this:
-
-```sql
-CREATE INDEX CONCURRENTLY embedding_mistral_v1_ip_lists_30_idx
-on public.fonts
-using ivfflat (embedding_mistral_v1 vector_ip_ops)
-with (lists = 30);
-```
-
-As far as I can tell the index name is never again touched by humans unless they're viewing a list of indices, so make it as long and specific as you like.
-
-Let's explain the other parameter choices:
-
-**ivfflat** = An index method optimized for high-dimensional vector data. It divides vectors into clusters for faster searching. The alternative would be `hnsw` (Hierarchical Navigable Small World) which can be faster but uses more memory.
-
-**vector_ip_ops** aka internal product = Fast way to compare vectors that can only be used in conjunction with certain embedding models, those that have been unit normalised. Alternatives are `vector_l2_ops` (Euclidean distance) and `vector_cosine_ops` (cosine similarity). Thank you to Chris Loy for helping me out here, he wrote a good [explainer post](https://chrisloy.dev/post/2025/06/30/distance-metrics) that goes through the different options.
-
-**lists** = Number of clusters to divide the vectors into. Generally: More lists give faster search but lower accuracy.
-
-Microsoft gives the following [advice for tuning ivfflat](https://learn.microsoft.com/en-us/azure/cosmos-db/postgresql/howto-optimize-performance-pgvector):
-
-1. Use lists equal to rows / 1000 for tables with up to 1 million rows and sqrt(rows) for larger datasets.
-2. For probes start with lists / 10 for tables up to 1 million rows and sqrt(lists) for larger datasets.
-
-So for 30,000 entires, that gives lists = 30, probes = 3. We'll use the probes value later.
-
-⚠️ **Potential Gotcha: Memory Limits** ⚠️
-
-You may hit the same problem I hit, which was that the working memory needed is higher than the default Supabase limits, and can't be increased via the interface! This is because the `SET maintenance_work_mem = '128MB';` command can't run inside a transaction block.
-
-The workaround was to connect to the database via Terminal.
-
-If you haven't done this before you'll need to install Postgres on your machine. For macOS using brew the command is:
-
-```sh
-brew install postgresql
-```
-
-Then connect in to the database with this command:
-
-```sh
-psql "host=aws-0-us-east-2.pooler.supabase.com dbname=postgres user=postgres.abcdefghijklmnopqrst"
-```
-
-Where...
-
-- `us-east-2` is the datacentre you chose when setting up your project
-- `abcdefghijklmnopqrst` is your Project Id
-- you'll be prompted for a password, it's the password you gave when you first set up the database
-
-I needed this psql command a few times and found it useful to store in .env for easy copy and paste, alongside the `npx supabase gen types` command.
-
-Once connected to the database by command line, I was able to run this code.
-
-```sql
-SET maintenance_work_mem = '128MB';
-
-CREATE INDEX CONCURRENTLY embedding_mistral_v1_ip_lists_30_idx
-on public.fonts
-using ivfflat (embedding_mistral_v1 vector_ip_ops)
-with (lists = 30);
-```
-
-## Step 10 - Create an RPC Function to call that Vector Index from code
+## Step 10 - Create an RPC Function to search by embedding
 
 Usually when you want to call this DB from code you'll use the supabase SDK, and that will have predefined functions to let you add, delete, update etc.
 
-Calling the vector index is beyond the scope of the current Supabase SDK, so we'll need to create our own custom function that we can call in a controlled way.
+Calling for results sorted by embedding distance is beyond the scope of the current Supabase SDK, so we'll need to create our own custom function that we can call in a controlled way.
 
 This is called an RPC (Remote Procedure Call) Function.
 
 For our needs, we're going to want to query the embedding column, and get results back with `name`, `hex`, and `is_good_name` fields. We don't need to specify the index we're calling, as there should be only one for that column.
 
-Here's the code for creating the index:
+Here's the code for creating the function:
 
 ```sql
 CREATE OR REPLACE FUNCTION search_embedding_mistral_v1(
@@ -400,21 +330,29 @@ CREATE OR REPLACE FUNCTION search_embedding_mistral_v1(
 )
 RETURNS TABLE (
   name text,
-  hex text,
-  is_good_name boolean,
+  category text,
+  copyright text,
+  designer text,
+  license text,
+  stroke text,
+  year integer,
+  url text,
+  description_p1 text,
   distance float
-  -- TODO UPDATE THIS
 )
-LANGUAGE sql VOLATILE
+LANGUAGE sql STABLE
 AS $$
-
-  SET  ivfflat.probes = 3;
 
   SELECT
     c.name,
-    c.hex,
-    c.is_good_name,
-      -- TODO UPDATE THIS
+    c.category,
+    c.copyright,
+    c.designer,
+    c.license,
+    c.stroke,
+    c.year,
+    c.url,
+    c.description_p1,
     c.embedding_mistral_v1 <#> query_embedding AS distance
   FROM (
     SELECT * FROM fonts
@@ -426,9 +364,15 @@ $$;
 
 Some explanations:
 
-`ivfflat probes` - This sets how many IVF lists the index will scan during search. Higher values give more accurate results but slower queries.
+`language sql stable` - This tells Postgres that this is a SQL function that will always return the same output for the same inputs, as long as the underlying data hasn't changed. Unlike 'volatile' functions which may return different results even with identical inputs, 'stable' functions are deterministic within a single query. This allows Postgres to optimize the function calls better, since it knows the results will be consistent for the same parameters within a transaction.
 
-`language sql volatile` - This tells Postgres that this is a SQL function that can modify data and its output may change even with the same inputs. 'volatile' means the function's result can vary even if called with identical parameters. This is required if we want to use a non-default number of ivfflat probes.
+## Step NN - Update your types file
+
+You're going to call this named function from your code, so you want Intellisense to expect it. Use your command that looks like this:
+
+```sh
+npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/types/supabase.ts
+```
 
 ## Step 11 - Run a Test Query
 
@@ -436,9 +380,9 @@ At this stage I only have 50 entries in the database, but that's enough to test 
 
 ```ts
 const testQuery = async () => {
-  const testEmbedding = await getEmbedding("very slick");
+  const testEmbedding = await getEmbedding("punk eleganza");
   const { data, error } = await clientSupabase.rpc(
-    "search_embedding_openai_1536",
+    "search_embedding_mistral_v1",
     {
       query_embedding: JSON.stringify(testEmbedding),
       match_count: 10,
@@ -447,16 +391,13 @@ const testQuery = async () => {
 };
 ```
 
-Sure enough, a wuery for "very slick" gives us the named font "Garamond". Success!
+Sure enough, a query for "punk eleganza" gives us the named font "Belleza".
 
-## Step 12 - Add in all the data
+I'm sure I don't need to tell you that "Belleza is a humanist sans serif typeface inspired by the world of fashion. With classic proportions, high contrast in its strokes and special counters, it provides a fresh look that reminds readers of elegant models and feminine beauty."
 
-At this point I added in all 30,355 entries. This took about 8 hours because I was too impatient to add in batching at the beginning.
+https://fonts.google.com/specimen/Belleza
 
-- 🟢 Good news: It cost me only $0.02 of API costs for the embedding values.
-- 🔴 Bad news: It pushed me over the database size limits on Supabase...
-
-TODO REWRITE THIS
+Serving up sans serif realness, success!
 
 ## Step 13 - Integrate with Frontend
 
@@ -466,9 +407,8 @@ The server code matches the pattern of a testQuery above.
 
 ## Other notes
 
-- This workflow was extremely similar to something similar I did with colors last week, so it was less than N hours work.
+- This workflow was similar to something similar I did [with colors](https://lui.ie/guides/semantic-search-colors) last week, but still took in the order of 2 days. The hardest work to optimize is understanding a new dataset.
 - Embedding costs for this project were trivial. 30k entries came in under $0.02 for Mistral
-- TODO add in more details
 
 ## Links
 
