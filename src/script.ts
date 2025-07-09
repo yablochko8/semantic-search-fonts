@@ -88,7 +88,9 @@ const parseFontBasicsFromPb = (content: string): FontBasics | null => {
 
 const parseP1FromHtml = (content: string): string | null => {
   const p1 = content.split("<p>")[1].split("</p>")[0];
-  return p1;
+  // There may be other tags within p1 (e.g. <a>, <br>, <strong> etc) We want to remove the tags, but keep the text.
+  const p1WithoutTags = p1.replace(/<[^>]*>?/g, "");
+  return p1WithoutTags;
 };
 
 const getAiDescriptors = async (fontUrl: string): Promise<string[]> => {
@@ -188,7 +190,6 @@ const scrapeFolder = async (
     "utf8"
   );
   const description_p1 = parseP1FromHtml(html);
-  console.log(description_p1);
 
   const ai_descriptors = await getAiDescriptors(url);
 
@@ -200,7 +201,7 @@ const scrapeFolder = async (
 
   const embeddings = await getEmbeddings([summary_text_v1]);
 
-  const embedding_mistral_v1 = embeddings[0];
+  const embedding_mistral_v1 = embeddings[0] || "";
 
   const fontDBReady: FontDBReady = {
     ...fontBasics,
@@ -227,3 +228,36 @@ const scrapeAndSaveFont = async (folderPath: string): Promise<boolean> => {
 };
 
 scrapeAndSaveFont("apache/aclonica");
+
+////////////////////////////////////
+// FULL SCRIPT
+////////////////////////////////////
+
+const main = async (topLevelFolders: string[]) => {
+  // Get all subfolders immediately in the top level folders
+  const subfolders: string[] = (
+    await Promise.all(
+      topLevelFolders.map(async (folder) => {
+        const subfolders = await fs.readdir(
+          path.join(__dirname, `../../cloned-projects/fonts/${folder}`)
+        );
+        return subfolders.map((subfolder) => `${folder}/${subfolder}`);
+      })
+    )
+  ).flat();
+
+  // Scrape and save each font
+  const fontPromises = subfolders.map((subfolder) =>
+    scrapeAndSaveFont(subfolder)
+  );
+
+  const results = await Promise.all(fontPromises);
+
+  // Store the results in a file
+  await fs.writeFile(
+    path.join(__dirname, "results.json"),
+    JSON.stringify(results, null, 2)
+  );
+};
+
+main(["ufl"]);
