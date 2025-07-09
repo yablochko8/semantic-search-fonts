@@ -74,6 +74,33 @@ export type Database = {
         }
         Relationships: []
       }
+      font_finder_requests: {
+        Row: {
+          created_at: string
+          duration_ms_embedding: number | null
+          duration_ms_supabase: number | null
+          id: number
+          query_text: string | null
+          top_result_name: string | null
+        }
+        Insert: {
+          created_at?: string
+          duration_ms_embedding?: number | null
+          duration_ms_supabase?: number | null
+          id?: number
+          query_text?: string | null
+          top_result_name?: string | null
+        }
+        Update: {
+          created_at?: string
+          duration_ms_embedding?: number | null
+          duration_ms_supabase?: number | null
+          id?: number
+          query_text?: string | null
+          top_result_name?: string | null
+        }
+        Relationships: []
+      }
       fonts: {
         Row: {
           ai_descriptors: string[] | null
@@ -125,77 +152,26 @@ export type Database = {
         }
         Relationships: []
       }
-      "fonts-old": {
-        Row: {
-          additional_weights: number[] | null
-          category: string | null
-          copyright: string | null
-          created_at: string | null
-          default_weight: number | null
-          designer: string | null
-          embedding_mistral_v1: string | null
-          filename: string | null
-          has_italic: boolean | null
-          id: number
-          is_variable: boolean | null
-          license: string | null
-          max_weight: number | null
-          min_weight: number | null
-          name: string
-          published_at: string | null
-          stroke: string | null
-          subsets: string[] | null
-          summary_text_v1: string | null
-        }
-        Insert: {
-          additional_weights?: number[] | null
-          category?: string | null
-          copyright?: string | null
-          created_at?: string | null
-          default_weight?: number | null
-          designer?: string | null
-          embedding_mistral_v1?: string | null
-          filename?: string | null
-          has_italic?: boolean | null
-          id?: number
-          is_variable?: boolean | null
-          license?: string | null
-          max_weight?: number | null
-          min_weight?: number | null
-          name: string
-          published_at?: string | null
-          stroke?: string | null
-          subsets?: string[] | null
-          summary_text_v1?: string | null
-        }
-        Update: {
-          additional_weights?: number[] | null
-          category?: string | null
-          copyright?: string | null
-          created_at?: string | null
-          default_weight?: number | null
-          designer?: string | null
-          embedding_mistral_v1?: string | null
-          filename?: string | null
-          has_italic?: boolean | null
-          id?: number
-          is_variable?: boolean | null
-          license?: string | null
-          max_weight?: number | null
-          min_weight?: number | null
-          name?: string
-          published_at?: string | null
-          stroke?: string | null
-          subsets?: string[] | null
-          summary_text_v1?: string | null
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      font_search_embedding_mistral_v1: {
+        Args: { query_embedding: string; match_count?: number }
+        Returns: {
+          name: string
+          category: string
+          copyright: string
+          designer: string
+          license: string
+          stroke: string
+          year: number
+          url: string
+          description_p1: string
+          distance: number
+        }[]
+      }
       search_embedding_mistral_1024: {
         Args: { query_embedding: string; match_count?: number }
         Returns: {

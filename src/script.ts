@@ -135,7 +135,7 @@ const getSummaryText = (
 
   const { name, year, designer } = fontBasics;
 
-  return `${name} is a ${adjectivesCombined} font designed by ${designer} in ${year}.${p1Description}`;
+  return `${name} is a ${adjectivesCombined} font designed by ${designer} in ${year}. ${p1Description}`;
 };
 
 /** Returns stringified embeddings, as that's what Supabase will want. Handles batches of inputs.
