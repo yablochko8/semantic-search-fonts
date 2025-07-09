@@ -167,64 +167,71 @@ const saveFontEntry = async (font: FontDBReady) => {
 const scrapeFolder = async (
   folderPath: string
 ): Promise<FontDBReady | null> => {
-  const pbMetadata = await fs.readFile(
-    path.join(
-      __dirname,
-      `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
-    ),
-    "utf8"
-  );
-  const fontBasics = parseFontBasicsFromPb(pbMetadata);
+  try {
+    const pbMetadata = await fs.readFile(
+      path.join(
+        __dirname,
+        `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
+      ),
+      "utf8"
+    );
+    const fontBasics = parseFontBasicsFromPb(pbMetadata);
 
-  if (!fontBasics) {
+    if (!fontBasics) {
+      return null;
+    }
+
+    const url = getUrlFromName(fontBasics.name);
+
+    const html = await fs.readFile(
+      path.join(
+        __dirname,
+        `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
+      ),
+      "utf8"
+    );
+    const description_p1 = parseP1FromHtml(html);
+
+    const ai_descriptors = await getAiDescriptors(url);
+
+    const summary_text_v1 = getSummaryText(
+      fontBasics,
+      description_p1 || "",
+      ai_descriptors
+    );
+
+    const embeddings = await getEmbeddings([summary_text_v1]);
+
+    const embedding_mistral_v1 = embeddings[0] || "";
+
+    const fontDBReady: FontDBReady = {
+      ...fontBasics,
+      url,
+      description_p1,
+      ai_descriptors,
+      summary_text_v1,
+      embedding_mistral_v1,
+    };
+
+    return fontDBReady;
+  } catch (error) {
+    console.error(`Error processing folder ${folderPath}:`, error);
     return null;
   }
-
-  const url = getUrlFromName(fontBasics.name);
-
-  const html = await fs.readFile(
-    path.join(
-      __dirname,
-      `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
-    ),
-    "utf8"
-  );
-  const description_p1 = parseP1FromHtml(html);
-
-  const ai_descriptors = await getAiDescriptors(url);
-
-  const summary_text_v1 = getSummaryText(
-    fontBasics,
-    description_p1 || "",
-    ai_descriptors
-  );
-
-  const embeddings = await getEmbeddings([summary_text_v1]);
-
-  const embedding_mistral_v1 = embeddings[0] || "";
-
-  const fontDBReady: FontDBReady = {
-    ...fontBasics,
-    url,
-    description_p1,
-    ai_descriptors,
-    summary_text_v1,
-    embedding_mistral_v1,
-  };
-
-  return fontDBReady;
 };
 
-const scrapeAndSaveFont = async (folderPath: string): Promise<boolean> => {
+const scrapeAndSaveFont = async (
+  folderPath: string
+): Promise<{ name: string; success: boolean }> => {
   const font = await scrapeFolder(folderPath);
 
   if (!font) {
-    return false;
+    return { name: folderPath, success: false };
   }
 
   await saveFontEntry(font);
 
-  return true;
+  return { name: folderPath, success: true };
 };
 
 scrapeAndSaveFont("apache/aclonica");
@@ -241,7 +248,11 @@ const main = async (topLevelFolders: string[]) => {
         const subfolders = await fs.readdir(
           path.join(__dirname, `../../cloned-projects/fonts/${folder}`)
         );
-        return subfolders.map((subfolder) => `${folder}/${subfolder}`);
+        // Filter out system files and hidden files
+        const validSubfolders = subfolders.filter(
+          (subfolder) => !subfolder.startsWith(".")
+        );
+        return validSubfolders.map((subfolder) => `${folder}/${subfolder}`);
       })
     )
   ).flat();
@@ -253,11 +264,31 @@ const main = async (topLevelFolders: string[]) => {
 
   const results = await Promise.all(fontPromises);
 
+  const successCount = results.filter((result) => result.success).length;
+  const totalCount = results.length;
+  console.log(
+    `Successfully scraped and saved ${successCount} out of ${totalCount} fonts`
+  );
+
+  const dateTime = new Date()
+    .toLocaleString("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    .replace(/[/,]/g, "-")
+    .replace(/:/g, "")
+    .replace(/\s/g, "-")
+    .replace(/--/g, "-");
+
   // Store the results in a file
   await fs.writeFile(
-    path.join(__dirname, "results.json"),
+    path.join(__dirname, `../logs/font-scrape-${dateTime}.json`),
     JSON.stringify(results, null, 2)
   );
 };
 
-main(["ufl"]);
+// main(["ufl"]);
