@@ -76,7 +76,7 @@ export type Database = {
       }
       fonts: {
         Row: {
-          ai_descriptors: string | null
+          ai_descriptors: string[] | null
           category: string | null
           copyright: string | null
           created_at: string | null
@@ -91,7 +91,7 @@ export type Database = {
           year: number | null
         }
         Insert: {
-          ai_descriptors?: string | null
+          ai_descriptors?: string[] | null
           category?: string | null
           copyright?: string | null
           created_at?: string | null
@@ -106,7 +106,7 @@ export type Database = {
           year?: number | null
         }
         Update: {
-          ai_descriptors?: string | null
+          ai_descriptors?: string[] | null
           category?: string | null
           copyright?: string | null
           created_at?: string | null
