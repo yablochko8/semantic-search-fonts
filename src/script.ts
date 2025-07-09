@@ -120,10 +120,7 @@ const getSummaryText = (
 
   const { name, year, designer } = fontBasics;
 
-  return `
-  ${name} is a ${adjectivesCombined} font designed by ${designer} in ${year}.
-  ${p1Description}
-  `;
+  return `${name} is a ${adjectivesCombined} font designed by ${designer} in ${year}.${p1Description}`;
 };
 
 /** Returns stringified embeddings, as that's what Supabase will want. Handles batches of inputs.
@@ -155,7 +152,7 @@ const saveFontEntry = async (font: FontDBReady) => {
   if (error) {
     console.error(error);
   } else {
-    console.log("Saved font entry", font.name);
+    console.log("Saved:", font.name, "\n");
   }
 };
 
@@ -167,6 +164,41 @@ const saveFontEntry = async (font: FontDBReady) => {
 const scrapeFolder = async (
   folderPath: string
 ): Promise<FontDBReady | null> => {
+  // Let's first check if we have a /METADATA.pb and /DESCRIPTION.en_us.html
+  // If either is missing, we will skip this font.
+  const metadataPath = path.join(
+    __dirname,
+    `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
+  );
+  const descriptionPath = path.join(
+    __dirname,
+    `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
+  );
+  const articlePath = path.join(
+    __dirname,
+    `../../cloned-projects/fonts/${folderPath}/article/ARTICLE.en_us.html`
+  );
+
+  const metadataExists = await fs
+    .access(metadataPath)
+    .then(() => true)
+    .catch(() => false);
+  const descriptionExists = await fs
+    .access(descriptionPath)
+    .then(() => true)
+    .catch(() => false);
+  const articleExists = await fs
+    .access(articlePath)
+    .then(() => true)
+    .catch(() => false);
+
+  // We definitely need a metadata file
+  // We also need a description file OR an article file
+  if (!metadataExists || (!descriptionExists && !articleExists)) {
+    console.error(`Missing files for ${folderPath}`);
+    return null;
+  }
+
   try {
     const pbMetadata = await fs.readFile(
       path.join(
@@ -183,14 +215,33 @@ const scrapeFolder = async (
 
     const url = getUrlFromName(fontBasics.name);
 
-    const html = await fs.readFile(
-      path.join(
-        __dirname,
-        `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
-      ),
-      "utf8"
-    );
-    const description_p1 = parseP1FromHtml(html);
+    const html = !descriptionExists
+      ? null
+      : await fs.readFile(
+          path.join(
+            __dirname,
+            `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
+          ),
+          "utf8"
+        );
+
+    const usableHtml =
+      html && html.length > 0
+        ? html
+        : await fs.readFile(
+            path.join(
+              __dirname,
+              `../../cloned-projects/fonts/${folderPath}/article/ARTICLE.en_us.html`
+            ),
+            "utf8"
+          );
+
+    if (usableHtml.length === 0) {
+      console.error(`No usable HTML for ${folderPath}`);
+      return null;
+    }
+
+    const description_p1 = parseP1FromHtml(usableHtml);
 
     const ai_descriptors = await getAiDescriptors(url);
 
@@ -262,7 +313,7 @@ const main = async (topLevelFolders: string[]) => {
     console.log(`Processing ${i + 1}/${subfolders.length}: ${subfolder}`);
     const result = await scrapeAndSaveFont(subfolder);
     results.push(result);
-    await delay(150);
+    await delay(100);
   }
 
   const successCount = results.filter((result) => result.success).length;
@@ -293,3 +344,5 @@ const main = async (topLevelFolders: string[]) => {
 };
 
 // main(["ufl", "apache", "ofl"]);
+
+// main(["ofl"]);
