@@ -1,329 +1,349 @@
-// import * as fs from "fs/promises";
-// import { clientSupabase } from "./connections/clientSupabase";
-// import { clientMistral } from "./connections/clientMistral";
+import * as fs from "fs/promises";
+import { clientSupabase } from "./connections/clientSupabase";
+import { clientMistral } from "./connections/clientMistral";
+import path from "path";
 
-// const COLORS_CSV_PATH = "src/colornames.csv";
+////////////////////////////////////
+// Types
+////////////////////////////////////
 
-// const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+type FontBasics = {
+  name: string; // from METADATA.pb
+  category: string | null; // from METADATA.pb (includes classifications here, space separated if multiple)
+  copyright: string | null; // from METADATA.pb > fonts[0]
+  designer: string | null; // from METADATA.pb
+  license: string | null; // from METADATA.pb
+  stroke: string | null; // from METADATA.pb
+  year: number | null; // from METADATA.pb (first four digits of date_added)
+};
 
-// const getColorNames = async (
-//   filePath: string,
-//   omitHeader: boolean = true,
-//   startRow: number,
-//   stopRow: number
-// ): Promise<string[]> => {
-//   const file = await fs.readFile(filePath, "utf8");
-//   const rows = file.split("\n");
-//   const contentRows = omitHeader ? rows.slice(1) : rows;
-//   if (startRow >= contentRows.length) {
-//     return [];
-//   }
-//   const adjustedStopRow = Math.min(stopRow, contentRows.length);
-//   const selectedRows = contentRows.slice(startRow, adjustedStopRow);
-//   return selectedRows.map((row) => row.split(",")[0]);
-// };
+type FontEnrichmentReady = FontBasics & {
+  url: string | null; // Can be constructed from name, separated by +, e.g.: https://fonts.googleapis.com/css2?family=Family+Name
+  description_p1: string | null; // Take the first <p> element of DESCRIPTION.en_us.html
+  ai_descriptors: string[]; // List of adjectives from multimodal AI assessment of visual
+  summary_text_v1: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
+};
 
-// type MistralUpdate = {
-//   name: string;
-//   embedding_mistral_1024: string;
-// };
+type FontDBReady = FontEnrichmentReady & {
+  embedding_mistral_v1: string;
+};
 
-// const getEmbeddingMistral = async (
-//   inputs: string[]
-// ): Promise<MistralUpdate[]> => {
-//   const response = await clientMistral.embeddings.create({
-//     model: "mistral-embed",
-//     inputs: inputs,
-//   });
+////////////////////////////////////
+// Small Utility Functions
+////////////////////////////////////
 
-//   const outputs = response.data;
+const getUrlFromName = (name: string) =>
+  `https://fonts.googleapis.com/css2?family=${name.replace(/\s+/g, "+")}`;
 
-//   if (!outputs || outputs.length === 0) {
-//     console.error(
-//       "No embedding in response from mistral-embed, for query starting with: ",
-//       inputs.slice(0, 20)
-//     );
-//     return [];
-//   }
-//   //   for (const output of outputs) {
-//   //     console.log(
-//   //       `Output ${output.index} is ${output.object} with length ${output.embedding?.length}`
-//   //     );
-//   //   }
-//   const validOutputs = outputs.filter(
-//     (output) => output.object === "embedding" && output.index !== undefined
-//   );
-//   return validOutputs.map((output) => ({
-//     name: inputs[output.index!],
-//     embedding_mistral_1024: JSON.stringify(output.embedding),
-//   }));
-// };
+const stripQuotes = (str: string | undefined) => str?.replace(/^"|"$/g, "");
 
-// const saveEmbeddingsToDB = async (updates: MistralUpdate[]) => {
-//   const { error } = await clientSupabase
-//     .from("colors")
-//     .upsert(updates, { onConflict: "name" });
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-//   if (error) {
-//     console.error("Error:", error);
-//   } else {
-//     // console.log(updates.length, "embeddings saved to DB");
-//   }
-// };
+const cleanAdjective = (adjective: string) =>
+  adjective
+    .replace(/_/g, " ")
+    .replace(/[^a-zA-Z ]/g, "")
+    .toLowerCase()
+    .trim();
 
-// const updateCycle = async (startRow: number, stopRow: number) => {
-//   const colorNames = await getColorNames(
-//     "src/colornames.csv",
-//     true,
-//     startRow,
-//     stopRow
-//   );
-//   if (colorNames.length === 0) {
-//     return 0;
-//   }
-//   const updates = await getEmbeddingMistral(colorNames);
-//   await saveEmbeddingsToDB(updates);
-//   console.log(`Updated rows ${startRow} to ${stopRow}`);
-//   return colorNames.length;
-// };
+const getStringTimestamp = () =>
+  new Date()
+    .toLocaleString("en-CA", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+    .replace(/[/,]/g, "-")
+    .replace(/:/g, "")
+    .replace(/\s/g, "-")
+    .replace(/--/g, "-");
 
-// const runFullScript = async (
-//   stepSize: number,
-//   startRow: number = 0,
-//   endRow: number = 35000
-// ) => {
-//   for (let i = startRow; i < endRow; i += stepSize) {
-//     await updateCycle(i, i + stepSize);
-//     await delay(500);
-//   }
-// };
+////////////////////////////////////
+// Single-Stage Functions
+////////////////////////////////////
 
-// // runFullScript(50);
+const parseFontBasicsFromPb = (content: string): FontBasics | null => {
+  const lines = content.split("\n").filter((line) => line.trim());
 
-// ////////////////////
-// // TEST FUNCTIONS
-// ////////////////////
+  // Split each line into key-value pairs
+  // If the key has already been seen ignore future mentions of, we only care about the first mention
+  const keyValuePairs = lines.map((line) => {
+    const [key, value] = line.split(":").map((s) => s.trim());
+    return { key, value };
+  });
 
-// // const updates = await getEmbeddingMistral([
-// //   "18th Century Green",
-// //   "24 Carrot",
-// //   "24 Karat",
-// // ]);
-// // console.log(updates);
-// // saveEmbeddingsToDB(updates);
+  const getFirstValue = (key: string): string | null =>
+    stripQuotes(keyValuePairs.find((pair) => pair.key === key)?.value) || null;
 
-// // addMistralEmbedding("18th Century Green");
+  const name = getFirstValue("name");
+  const category = getFirstValue("category");
+  const copyright = getFirstValue("copyright");
+  const designer = getFirstValue("designer");
+  const license = getFirstValue("license");
+  const stroke = getFirstValue("stroke");
+  const year = getFirstValue("date_added")
+    ? parseInt(getFirstValue("date_added")?.substring(0, 4) || "0")
+    : null;
 
-// const testQuery = async (logging: boolean = false) => {
-//   const startTime = performance.now();
-//   const mistralUpdate = await getEmbeddingMistral([
-//     "the one holy religious order of catholic france and poland",
-//   ]);
+  if (!name) return null;
 
-//   const testEmbeddingString = mistralUpdate[0]?.embedding_mistral_1024;
-//   const checkpoint1 = performance.now();
+  return {
+    name,
+    category,
+    copyright,
+    designer,
+    license,
+    stroke,
+    year,
+  };
+};
 
-//   const { data, error } = await clientSupabase.rpc(
-//     "search_embedding_mistral_1024",
-//     {
-//       query_embedding: testEmbeddingString,
-//       match_count: 10,
-//     }
-//   );
+const parseP1FromHtml = (content: string): string | null => {
+  const p1 = content.split("<p>")[1].split("</p>")[0];
+  // There may be other tags within p1 (e.g. <a>, <br>, <strong> etc). We want to remove the tags, but keep the text.
+  const p1WithoutTags = p1.replace(/<[^>]*>?/g, "");
+  return p1WithoutTags;
+};
 
-//   const checkpoint2 = performance.now();
+const getAiDescriptors = async (fontUrl: string): Promise<string[]> => {
+  await delay(100);
+  // TODO: This function will send an image of of the typeface to an AI model and ask for it to be characterized.
 
-//   const endTime = performance.now();
-//   const duration = Math.round(endTime - startTime);
-//   const duration1 = Math.round(checkpoint1 - startTime);
-//   const duration2 = Math.round(checkpoint2 - checkpoint1);
+  return [];
+};
 
-//   if (error) {
-//     console.error("RPC error:", error.details);
-//   } else {
-//     if (logging) {
-//       console.log("Matches:", data);
-//       console.log(`Query took ${duration}ms`);
-//       console.log(`Mistral call to get embedding: ${duration1}ms`);
-//       console.log(`Supabase call to get results: ${duration2}ms`);
-//     }
-//   }
-// };
+const getSummaryText = (
+  fontBasics: FontBasics,
+  p1Description: string,
+  descriptors: string[]
+): string => {
+  // Create an array that combines all the categories, stroke values, and descriptors.
+  const allAdjectives = [
+    ...(fontBasics.category?.split(" ") || []),
+    ...(fontBasics.stroke?.split(" ") || []),
+    ...descriptors,
+  ]
+    .map(cleanAdjective)
+    .filter((adjective) => adjective.length > 0);
 
-// // testQuery(true);
+  const uniqueAdjectives = [...new Set(allAdjectives)];
 
-// ////////////////////
-// // PIPELINE FUNCTIONS
-// ////////////////////
+  const adjectivesCombined = uniqueAdjectives.join(", ");
 
-// const readColorRow = (rowText: string): RawColor => {
-//   const [name, hex, isGoodName] = rowText.split(",");
-//   return {
-//     name,
-//     hex,
-//     is_good_name: isGoodName === "x",
-//   };
-// };
+  const { name, year, designer } = fontBasics;
 
-// type RawColor = {
-//   name: string;
-//   hex: string;
-//   is_good_name: boolean;
-// };
+  return `${name} is a ${adjectivesCombined} font designed by ${designer} in ${year}. ${p1Description}`;
+};
 
-// const validRawColor = (rawColor: RawColor): boolean => {
-//   const validName = rawColor.name.length > 0 && rawColor.name.length < 100;
-//   const validHex = rawColor.hex.length === 7 && rawColor.hex.startsWith("#");
-//   const validIsGoodName = typeof rawColor.is_good_name === "boolean";
-//   return validName && validHex && validIsGoodName;
-// };
+/** Returns stringified embeddings, as that's what Supabase will want. Handles batches of inputs.
+ * Returns empty array if there's any error.
+ */
+const getEmbeddings = async (inputs: string[]): Promise<string[]> => {
+  const response = await clientMistral.embeddings.create({
+    model: "mistral-embed",
+    inputs: inputs,
+  });
 
-// const getEmbedding = async (inputText: string): Promise<number[]> => {
-//   const embedding = await clientOpenai.embeddings.create({
-//     model: "text-embedding-3-small",
-//     input: inputText,
-//     encoding_format: "float", // We would potentially prefer a string here to match Supabase expectation, but OpenAI only supports "float" | "base64" | undefined
-//   });
-//   return embedding.data[0].embedding;
-// };
+  const outputs = response.data;
 
-// const prepColorEntry = async (rawColor: RawColor): Promise<PreppedColor> => {
-//   if (!validRawColor(rawColor)) {
-//     throw new Error(`Invalid raw color: ${JSON.stringify(rawColor)}`);
-//   }
-//   const embeddingSmall = await getEmbedding(rawColor.name);
-//   const noHashHex = rawColor.hex.replace("#", "");
-//   return {
-//     ...rawColor,
-//     hex: noHashHex,
-//     embedding_openai_1536: JSON.stringify(embeddingSmall),
-//   };
-// };
+  if (!outputs || outputs.length !== inputs.length) {
+    console.error("Failed to get embedding, ref: ", inputs[0].slice(0, 20));
+    return [];
+  }
 
-// type PreppedColor = {
-//   name: string;
-//   hex: string;
-//   is_good_name: boolean;
-//   embedding_openai_1536: string;
-// };
+  const validOutputs = outputs.filter(
+    (output) => output.object === "embedding" && output.index !== undefined
+  );
+  return validOutputs.map((output) => JSON.stringify(output.embedding));
+};
 
-// const saveColorEntry = async (preppedColor: PreppedColor) => {
-//   const { error } = await clientSupabase
-//     .from("colors")
-//     .upsert(preppedColor, { onConflict: "name" });
-//   if (error) {
-//     console.error(error);
-//   } else {
-//     console.log("Saved color entry", preppedColor.name);
-//   }
-// };
+const saveFontEntry = async (font: FontDBReady) => {
+  const { error } = await clientSupabase
+    .from("fonts")
+    .upsert(font, { onConflict: "name" });
+  if (error) {
+    console.error(error);
+  } else {
+    console.log("Saved:", font.name, "\n");
+  }
+};
 
-// ////////////////////
-// // TEST FUNCTIONS
-// ////////////////////
+////////////////////////////////////
+// Combination Functions
+////////////////////////////////////
 
-// const testEmbedding = async () => {
-//   const embedding = await getEmbedding("red");
-//   fs.writeFile("embedding.txt", JSON.stringify(embedding, null, 2), "utf8");
-//   console.log(embedding.length);
-// };
+/** Parent script to pull the others together. */
+const scrapeFolder = async (
+  folderPath: string
+): Promise<FontDBReady | null> => {
+  // Let's first check if we have a /METADATA.pb and /DESCRIPTION.en_us.html
+  // If either is missing, we will skip this font.
+  const metadataPath = path.join(
+    __dirname,
+    `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
+  );
+  const descriptionPath = path.join(
+    __dirname,
+    `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
+  );
+  const articlePath = path.join(
+    __dirname,
+    `../../cloned-projects/fonts/${folderPath}/article/ARTICLE.en_us.html`
+  );
 
-// // testEmbedding();
+  const metadataExists = await fs
+    .access(metadataPath)
+    .then(() => true)
+    .catch(() => false);
+  const descriptionExists = await fs
+    .access(descriptionPath)
+    .then(() => true)
+    .catch(() => false);
+  const articleExists = await fs
+    .access(articlePath)
+    .then(() => true)
+    .catch(() => false);
 
-// const testSaveColorEntry = async () => {
-//   const rawColor = {
-//     name: "100 Mph",
-//     hex: "#aaabbb",
-//     // hex: "#c93f38",
-//     is_good_name: true,
-//   };
-//   const preppedColor = await prepColorEntry(rawColor);
-//   await saveColorEntry(preppedColor);
-//   console.log("Test sequence complete.");
-// };
+  // We definitely need a metadata file
+  // We also need a description file OR an article file
+  if (!metadataExists || (!descriptionExists && !articleExists)) {
+    console.error(`Missing files for ${folderPath}`);
+    return null;
+  }
 
-// // testSaveColorEntry();
+  try {
+    const pbMetadata = await fs.readFile(
+      path.join(
+        __dirname,
+        `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
+      ),
+      "utf8"
+    );
+    const fontBasics = parseFontBasicsFromPb(pbMetadata);
 
-// const testQuery = async (logging: boolean = false) => {
-//   const startTime = performance.now();
-//   const testEmbedding = await getEmbedding("very fast car");
+    if (!fontBasics) {
+      return null;
+    }
 
-//   const checkpoint1 = performance.now();
+    const url = getUrlFromName(fontBasics.name);
 
-//   const { data, error } = await clientSupabase.rpc(
-//     "search_embedding_openai_1536",
-//     {
-//       query_embedding: JSON.stringify(testEmbedding),
-//       match_count: 10,
-//     }
-//   );
+    const html = !descriptionExists
+      ? null
+      : await fs.readFile(
+          path.join(
+            __dirname,
+            `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
+          ),
+          "utf8"
+        );
 
-//   const checkpoint2 = performance.now();
+    const usableHtml =
+      html && html.length > 0
+        ? html
+        : await fs.readFile(
+            path.join(
+              __dirname,
+              `../../cloned-projects/fonts/${folderPath}/article/ARTICLE.en_us.html`
+            ),
+            "utf8"
+          );
 
-//   const endTime = performance.now();
-//   const duration = Math.round(endTime - startTime);
-//   const duration1 = Math.round(checkpoint1 - startTime);
-//   const duration2 = Math.round(checkpoint2 - checkpoint1);
+    if (usableHtml.length === 0) {
+      console.error(`No usable HTML for ${folderPath}`);
+      return null;
+    }
 
-//   if (error) {
-//     console.error("RPC error:", error);
-//   } else {
-//     if (logging) {
-//       data.forEach((d, i) => {
-//         console.log(`${i + 1}. ${d.name}, ${d.distance}`);
-//       });
-//       console.log(`Query took ${duration}ms`);
-//       console.log(`OpenAI call to get embedding: ${duration1}ms`);
-//       console.log(`Supabase call to get results: ${duration2}ms \n`);
-//     }
-//   }
-// };
+    const description_p1 = parseP1FromHtml(usableHtml);
 
-// // testQuery(true);
+    const ai_descriptors = await getAiDescriptors(url);
 
-// ////////////////////
-// // UTILITY FUNCTIONS + FULL SCRIPT
-// ////////////////////
+    const summary_text_v1 = getSummaryText(
+      fontBasics,
+      description_p1 || "",
+      ai_descriptors
+    );
 
-// const getColorRows = async (
-//   filePath: string,
-//   omitHeader: boolean = true,
-//   maxRows?: number
-// ): Promise<string[]> => {
-//   const file = await fs.readFile(filePath, "utf8");
-//   const rows = file.split("\n");
-//   const contentRows = omitHeader ? rows.slice(1) : rows;
-//   const returnRows = maxRows ? contentRows.slice(0, maxRows) : contentRows;
-//   return returnRows;
-// };
+    const embeddings = await getEmbeddings([summary_text_v1]);
 
-// const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const embedding_mistral_v1 = embeddings[0] || "";
 
-// const runFullScript = async (maxRows?: number, startRow?: number) => {
-//   const colorRows = await getColorRows(COLORS_CSV_PATH, true, maxRows);
-//   console.log(`Processing ${colorRows.length} color entries...`);
+    const fontDBReady: FontDBReady = {
+      ...fontBasics,
+      url,
+      description_p1,
+      ai_descriptors,
+      summary_text_v1,
+      embedding_mistral_v1,
+    };
 
-//   for (let i = startRow || 0; i < colorRows.length; i++) {
-//     const row = colorRows[i];
-//     try {
-//       const rawColor = readColorRow(row);
-//       const preppedColor = await prepColorEntry(rawColor);
-//       await saveColorEntry(preppedColor);
+    return fontDBReady;
+  } catch (error) {
+    console.error(`Error processing folder ${folderPath}:`, error);
+    return null;
+  }
+};
 
-//       // Add delay every 10 entries to avoid overwhelming the APIs
-//       if ((i + 1) % 10 === 0) {
-//         console.log(
-//           `Processed ${i + 1}/${colorRows.length} entries. Adding delay...`
-//         );
-//         await delay(200); // this (in ms) is a delay between every 10 entries
-//       }
-//     } catch (error) {
-//       console.error(`Error processing row ${i + 1}:`, error);
-//       // Continue with next entry instead of stopping the entire script
-//     }
-//   }
+const scrapeAndSaveFont = async (
+  folderPath: string
+): Promise<{ name: string; success: boolean }> => {
+  const font = await scrapeFolder(folderPath);
 
-//   console.log("Script completed!");
-// };
+  if (!font) {
+    return { name: folderPath, success: false };
+  }
 
-// // runFullScript(100000, 2570);
+  await saveFontEntry(font);
+
+  return { name: folderPath, success: true };
+};
+
+////////////////////////////////////
+// FULL SCRIPT
+////////////////////////////////////
+
+const main = async (topLevelFolders: string[]) => {
+  // Get all subfolders immediately in the top level folders
+  const subfolders: string[] = (
+    await Promise.all(
+      topLevelFolders.map(async (folder) => {
+        const subfolders = await fs.readdir(
+          path.join(__dirname, `../../cloned-projects/fonts/${folder}`)
+        );
+        // Filter out system files and hidden files
+        const validSubfolders = subfolders.filter(
+          (subfolder) => !subfolder.startsWith(".")
+        );
+        return validSubfolders.map((subfolder) => `${folder}/${subfolder}`);
+      })
+    )
+  ).flat();
+
+  // Scrape and save each font consecutively
+  const results: { name: string; success: boolean }[] = [];
+  for (let i = 0; i < subfolders.length; i++) {
+    const subfolder = subfolders[i];
+    console.log(`Processing ${i + 1}/${subfolders.length}: ${subfolder}`);
+    const result = await scrapeAndSaveFont(subfolder);
+    results.push(result);
+    await delay(100);
+  }
+
+  const successCount = results.filter((result) => result.success).length;
+  const totalCount = results.length;
+  console.log(
+    `Successfully scraped and saved ${successCount} out of ${totalCount} fonts`
+  );
+
+  // Store the results in a file
+  await fs.writeFile(
+    path.join(__dirname, `../logs/font-scrape-${getStringTimestamp()}.json`),
+    JSON.stringify(results, null, 2)
+  );
+};
+
+// To run this, uncomment the line below and then in Terminal: bun src/script.ts
+
+// main(["ufl", "apache", "ofl"]);
