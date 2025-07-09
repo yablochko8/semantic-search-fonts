@@ -80,6 +80,7 @@ export type Database = {
           category: string | null
           copyright: string | null
           created_at: string | null
+          description_p1: string | null
           designer: string | null
           embedding_mistral_v1: string | null
           id: number
@@ -95,6 +96,7 @@ export type Database = {
           category?: string | null
           copyright?: string | null
           created_at?: string | null
+          description_p1?: string | null
           designer?: string | null
           embedding_mistral_v1?: string | null
           id?: number
@@ -110,6 +112,7 @@ export type Database = {
           category?: string | null
           copyright?: string | null
           created_at?: string | null
+          description_p1?: string | null
           designer?: string | null
           embedding_mistral_v1?: string | null
           id?: number

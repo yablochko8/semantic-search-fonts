@@ -4,17 +4,6 @@ import { clientMistral } from "./connections/clientMistral";
 import path from "path";
 
 ////////////////////////////////////
-// Small Utility Functions
-////////////////////////////////////
-
-const getUrlFromName = (name: string) =>
-  `https://fonts.googleapis.com/css2?family=${name.replace(/\s+/g, "+")}`;
-
-const stripQuotes = (str: string | undefined) => str?.replace(/^"|"$/g, "");
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-////////////////////////////////////
 // Types
 ////////////////////////////////////
 
@@ -38,6 +27,24 @@ type FontEnrichmentReady = FontBasics & {
 type FontDBReady = FontEnrichmentReady & {
   embedding_mistral_v1: string;
 };
+
+////////////////////////////////////
+// Small Utility Functions
+////////////////////////////////////
+
+const getUrlFromName = (name: string) =>
+  `https://fonts.googleapis.com/css2?family=${name.replace(/\s+/g, "+")}`;
+
+const stripQuotes = (str: string | undefined) => str?.replace(/^"|"$/g, "");
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const cleanAdjective = (adjective: string) =>
+  adjective
+    .replace(/_/g, " ")
+    .replace(/[^a-zA-Z ]/g, "")
+    .toLowerCase()
+    .trim();
 
 ////////////////////////////////////
 // Single-Stage Functions
@@ -98,19 +105,21 @@ const getSummaryText = (
 ): string => {
   // Create an array that combines all the categories, stroke values, and descriptors.
   const allAdjectives = [
-    ...new Set([
-      ...(fontBasics.category?.split(" ") || []),
-      ...(fontBasics.stroke?.split(" ") || []),
-      ...descriptors,
-    ]),
-  ].filter((adjective) => adjective.length > 0);
+    ...(fontBasics.category?.split(" ") || []),
+    ...(fontBasics.stroke?.split(" ") || []),
+    ...descriptors,
+  ]
+    .map(cleanAdjective)
+    .filter((adjective) => adjective.length > 0);
 
-  const allAdjectivesString = allAdjectives.join(", ");
+  const uniqueAdjectives = [...new Set(allAdjectives)];
+
+  const adjectivesCombined = uniqueAdjectives.join(", ");
 
   const { name, year, designer } = fontBasics;
 
   return `
-  ${name} is a ${allAdjectivesString} font designed by ${designer} in ${year}.
+  ${name} is a ${adjectivesCombined} font designed by ${designer} in ${year}.
   ${p1Description}
   `;
 };
@@ -135,6 +144,17 @@ const getEmbeddings = async (inputs: string[]): Promise<string[]> => {
     (output) => output.object === "embedding" && output.index !== undefined
   );
   return validOutputs.map((output) => JSON.stringify(output.embedding));
+};
+
+const saveFontEntry = async (font: FontDBReady) => {
+  const { error } = await clientSupabase
+    .from("fonts")
+    .upsert(font, { onConflict: "name" });
+  if (error) {
+    console.error(error);
+  } else {
+    console.log("Saved font entry", font.name);
+  }
 };
 
 ////////////////////////////////////
@@ -191,9 +211,19 @@ const scrapeFolder = async (
     embedding_mistral_v1,
   };
 
-  console.log(fontDBReady);
-
   return fontDBReady;
 };
 
-scrapeFolder("apache/aclonica");
+const scrapeAndSaveFont = async (folderPath: string): Promise<boolean> => {
+  const font = await scrapeFolder(folderPath);
+
+  if (!font) {
+    return false;
+  }
+
+  await saveFontEntry(font);
+
+  return true;
+};
+
+scrapeAndSaveFont("apache/aclonica");

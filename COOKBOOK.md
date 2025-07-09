@@ -105,7 +105,8 @@ For our font data we're going to keep it as tight as we can while still providin
 - copyright (string)
 - category (string? e.g. MONOSPACE | DISPLAY)
 - stroke (string e.g. SANS_SERIF | SERIF)
-- ai_descriptors (string)
+- ai_descriptors (string array)
+- description_p1 (string - just the first paragraph from the description html docs)
 - summary_text_v1 (string - this is what we'll transform into a vector)
 - embedding_mistral_v1 (vector with 1024 dimensions)
 
@@ -125,8 +126,8 @@ CREATE TABLE public.fonts (
 
     category TEXT,  -- e.g. MONOSPACE, DISPLAY, HANDWRITING, - populate "classifications" here as well (space separated if multiple)
     stroke TEXT,    -- e.g. SANS_SERIF, SERIF
-    ai_descriptors TEXT,
-
+    ai_descriptors TEXT[],
+    description_p1 TEXT,
     summary_text_v1 TEXT,
     embedding_mistral_v1 VECTOR(1024)
 );
