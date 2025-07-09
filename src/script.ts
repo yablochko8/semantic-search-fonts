@@ -234,8 +234,6 @@ const scrapeAndSaveFont = async (
   return { name: folderPath, success: true };
 };
 
-scrapeAndSaveFont("apache/aclonica");
-
 ////////////////////////////////////
 // FULL SCRIPT
 ////////////////////////////////////
@@ -257,12 +255,15 @@ const main = async (topLevelFolders: string[]) => {
     )
   ).flat();
 
-  // Scrape and save each font
-  const fontPromises = subfolders.map((subfolder) =>
-    scrapeAndSaveFont(subfolder)
-  );
-
-  const results = await Promise.all(fontPromises);
+  // Scrape and save each font consecutively
+  const results: { name: string; success: boolean }[] = [];
+  for (let i = 0; i < subfolders.length; i++) {
+    const subfolder = subfolders[i];
+    console.log(`Processing ${i + 1}/${subfolders.length}: ${subfolder}`);
+    const result = await scrapeAndSaveFont(subfolder);
+    results.push(result);
+    await delay(150);
+  }
 
   const successCount = results.filter((result) => result.success).length;
   const totalCount = results.length;
@@ -291,4 +292,4 @@ const main = async (topLevelFolders: string[]) => {
   );
 };
 
-// main(["ufl"]);
+// main(["ufl", "apache", "ofl"]);
