@@ -110,11 +110,13 @@ export type Database = {
           description_p1: string | null
           designer: string | null
           embedding_mistral_v1: string | null
+          embedding_mistral_v2: string | null
           id: number
           license: string | null
           name: string
           stroke: string | null
           summary_text_v1: string | null
+          summary_text_v2: string | null
           url: string | null
           year: number | null
         }
@@ -126,11 +128,13 @@ export type Database = {
           description_p1?: string | null
           designer?: string | null
           embedding_mistral_v1?: string | null
+          embedding_mistral_v2?: string | null
           id?: number
           license?: string | null
           name: string
           stroke?: string | null
           summary_text_v1?: string | null
+          summary_text_v2?: string | null
           url?: string | null
           year?: number | null
         }
@@ -142,11 +146,13 @@ export type Database = {
           description_p1?: string | null
           designer?: string | null
           embedding_mistral_v1?: string | null
+          embedding_mistral_v2?: string | null
           id?: number
           license?: string | null
           name?: string
           stroke?: string | null
           summary_text_v1?: string | null
+          summary_text_v2?: string | null
           url?: string | null
           year?: number | null
         }
