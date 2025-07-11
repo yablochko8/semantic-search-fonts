@@ -1,18 +1,19 @@
 import { createCanvas, registerFont } from "canvas";
 import { clientMistral } from "./connections/clientMistral";
+import fs from "fs";
 
 /** Returns a PNG buffer of the text in the font */
 export const generateSamplePng = async (
   ttfPath: string,
   printText: string = `The Quick Brown
-  Fox jumps over 
-   the lazy dog!`
+Fox jumps over 
+the lazy dog!`
 ): Promise<Buffer> => {
   // Register font with Canvas directly from local path
   registerFont(ttfPath, { family: "CustomFont" });
-  const width = 512;
-  const height = 256;
-  const fontSize = 48;
+  const width = 1024;
+  const height = 512;
+  const fontSize = 96;
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
@@ -25,6 +26,11 @@ export const generateSamplePng = async (
   ctx.fillText(printText, 20, 20);
 
   const buffer = canvas.toBuffer("image/png");
+
+  // Save the image to a .png file in logs
+  const fileName = ttfPath.split("/").pop()?.split(".")[0];
+  console.log({ fileName });
+  fs.writeFileSync(`./logs/img-${fileName}.png`, buffer);
 
   return buffer;
 };
@@ -41,13 +47,13 @@ export const getDescriptors = async (
   base64Image: string
 ): Promise<string[]> => {
   const MODEL = "pixtral-large-latest";
-  const PROMPT_TEXT = `I'm going to share an image of a font with you. Please analyze the style and essence of the font typeface. Return a list of twenty descriptors that best capture it. Descriptors can capture the style, typographical characteristics, likely usage, and any thing else that defines the font in the image. Respond with lower-case words only. Format your response as a JSON object with the following structure:
+  const PROMPT_TEXT = `You are an expert typographer. I'm going to share an image of a font typeface with you. Please analyze the style and essence of the font typeface. Return between 15 and 25 unique, lower-case, hyphen-separated descriptors ranked from most to least characteristic. Descriptors can capture the style, typographical characteristics, likely usage, and anything else that defines the typeface. Hyphenated words and very short phrases are also ok. Format your response as a JSON object with the following structure:
   
   {
       "descriptors": ["descriptor1", "descriptor2", "descriptor3", ...]
   }
   
-  No chit chat, just the JSON object.
+  Raw JSON, no markdown, no chit chat.
   `;
   const messages = [
     {
@@ -92,12 +98,12 @@ export const getDescriptors = async (
   return parsedContent.descriptors;
 };
 
-const testImageAssess = async () => {
-  const buffer = await generateSamplePng(
-    "/Users/factions/dev/cloned-projects/fonts/ofl/akronim/Akronim-Regular.ttf"
-  );
-  const descriptors = await getDescriptors(bufferToString(buffer));
-  console.log(descriptors);
-};
+// const testImageAssess = async () => {
+//   const buffer = await generateSamplePng(
+//     "/Users/factions/dev/cloned-projects/fonts/ofl/akronim/Akronim-Regular.ttf"
+//   );
+//   const descriptors = await getDescriptors(bufferToString(buffer));
+//   console.log(descriptors);
+// };
 
 // await testImageAssess();

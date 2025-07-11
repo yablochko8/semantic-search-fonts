@@ -112,6 +112,7 @@ const parseP1FromHtml = (content: string): string | null => {
 
 const getAiDescriptors = async (ttfUrl: string): Promise<string[]> => {
   const imageBuffer = await generateSamplePng(ttfUrl);
+  console.log("image made with buffer length", imageBuffer.length);
   const descriptors = await getDescriptors(imageBuffer.toString("base64"));
   return descriptors;
 };
@@ -180,36 +181,27 @@ const saveFontEntry = async (font: FontDBReady) => {
 const scrapeFolder = async (
   folderPath: string
 ): Promise<FontDBReady | null> => {
+  const fontDir = path.join(
+    __dirname,
+    `../../cloned-projects/fonts/${folderPath}`
+  );
+  const fileNames = await fs.readdir(fontDir);
+
   // Let's first check if we have a /METADATA.pb and /DESCRIPTION.en_us.html
+  // article/ARTICLE.en_us.html is the fallback source for description
   // If either is missing, we will skip this font.
-  const metadataPath = path.join(
-    __dirname,
-    `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
-  );
-  const descriptionPath = path.join(
-    __dirname,
-    `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
-  );
+  const metadataExists = fileNames.includes("METADATA.pb");
+  const descriptionExists = fileNames.includes("DESCRIPTION.en_us.html");
+
   const articlePath = path.join(
     __dirname,
     `../../cloned-projects/fonts/${folderPath}/article/ARTICLE.en_us.html`
   );
-
-  const metadataExists = await fs
-    .access(metadataPath)
-    .then(() => true)
-    .catch(() => false);
-  const descriptionExists = await fs
-    .access(descriptionPath)
-    .then(() => true)
-    .catch(() => false);
   const articleExists = await fs
     .access(articlePath)
     .then(() => true)
     .catch(() => false);
 
-  // We definitely need a metadata file
-  // We also need a description file OR an article file
   if (!metadataExists || (!descriptionExists && !articleExists)) {
     console.error(`Missing files for ${folderPath}`);
     return null;
@@ -260,46 +252,38 @@ const scrapeFolder = async (
     const description_p1 = parseP1FromHtml(usableHtml);
 
     // Find all .ttf files in the folder
-    const fontDir = path.join(
-      __dirname,
-      `../../cloned-projects/fonts/${folderPath}`
-    );
-    const files = await fs.readdir(fontDir);
-    console.log({ files });
-    const ttfFiles = files.filter((f) => f.endsWith(".ttf"));
+
+    const ttfFiles = fileNames.filter((f) => f.endsWith(".ttf"));
 
     if (ttfFiles.length === 0) {
       console.error(`No .ttf files found in ${folderPath}`);
       return null;
     }
 
-    let chosenTtf = ttfFiles[0]; // Default to first one
+    // Sort the ttf files with the following rules:
+    // 1. Regular files first
+    // 2. Bold files second
+    // 3. Italic files last
+    const sortedTtfFiles = ttfFiles.sort((a, b) => {
+      const aHasItalic = a.includes("Italic");
+      const bHasItalic = b.includes("Italic");
+      const aHasBold = a.includes("Bold");
+      const bHasBold = b.includes("Bold");
 
-    if (ttfFiles.length > 1) {
-      // Look for files with "Regular" in the name
-      const regularFiles = ttfFiles.filter((f) => f.includes("Regular"));
+      // If one has Italic and the other doesn't, Italic goes last
+      if (aHasItalic && !bHasItalic) return 1;
+      if (!aHasItalic && bHasItalic) return -1;
 
-      if (regularFiles.length === 1) {
-        chosenTtf = regularFiles[0];
-      } else if (regularFiles.length > 1) {
-        // Filter out ones with Italic or Bold
-        const cleanRegularFiles = regularFiles.filter(
-          (f) => !f.includes("Italic") && !f.includes("Bold")
-        );
+      // If neither has Italic or both have Italic, sort by Bold
+      if (aHasBold && !bHasBold) return 1;
+      if (!aHasBold && bHasBold) return -1;
 
-        if (cleanRegularFiles.length >= 1) {
-          if (cleanRegularFiles.length > 1) {
-            console.warn(
-              `Multiple candidate TTF files found in ${folderPath}, using first one`
-            );
-          }
-          chosenTtf = cleanRegularFiles[0];
-        }
-      }
-    }
+      return 0;
+    });
+    const chosenTtf = sortedTtfFiles[0];
 
     const ttfUrl = path.join(fontDir, chosenTtf);
-
+    console.log("fetching descriptors for", ttfUrl);
     const ai_descriptors = await getAiDescriptors(ttfUrl);
     console.log(ai_descriptors);
 
@@ -390,3 +374,6 @@ const main = async (topLevelFolders: string[]) => {
 // To run this, uncomment the line below and then in Terminal: bun src/script.ts
 
 // main(["ufl", "apache", "ofl"]);
+
+main(["ufl"]);
+// main(["apache"]);
