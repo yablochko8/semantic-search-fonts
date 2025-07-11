@@ -9,8 +9,12 @@ export const generateSamplePng = async (
 Fox jumps over 
 the lazy dog!`
 ): Promise<Buffer> => {
+  // Generate a unique font family name based on the file path
+  const fontName = ttfPath.split("/").pop()?.split(".")[0] || "font";
+  const uniqueFontFamily = `Font_${fontName}_${Date.now()}`;
+
   // Register font with Canvas directly from local path
-  registerFont(ttfPath, { family: "CustomFont" });
+  registerFont(ttfPath, { family: uniqueFontFamily });
   const width = 1024;
   const height = 512;
   const fontSize = 96;
@@ -21,7 +25,7 @@ the lazy dog!`
   ctx.fillStyle = "#FFFFFF";
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#000000";
-  ctx.font = `${fontSize}px "CustomFont"`;
+  ctx.font = `${fontSize}px "${uniqueFontFamily}"`;
   ctx.textBaseline = "top";
   ctx.fillText(printText, 20, 20);
 

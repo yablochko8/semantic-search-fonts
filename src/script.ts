@@ -262,22 +262,23 @@ const scrapeFolder = async (
     }
 
     // Sort the ttf files with the following rules:
-    // 1. Regular files first
-    // 2. Bold files second
-    // 3. Italic files last
+    // 1. Regular fonts first
+    // 2. Variant fonts (Italic, Bold, Black, etc) files second
     const sortedTtfFiles = ttfFiles.sort((a, b) => {
-      const aHasItalic = a.includes("Italic");
-      const bHasItalic = b.includes("Italic");
-      const aHasBold = a.includes("Bold");
-      const bHasBold = b.includes("Bold");
+      const aHasRegular = a.includes("Regular");
+      const bHasRegular = b.includes("Regular");
+      const aIsVariant =
+        a.includes("Italic") || a.includes("Bold") || a.includes("Black");
+      const bIsVariant =
+        b.includes("Italic") || b.includes("Bold") || b.includes("Black");
 
-      // If one has Italic and the other doesn't, Italic goes last
-      if (aHasItalic && !bHasItalic) return 1;
-      if (!aHasItalic && bHasItalic) return -1;
+      // If one is a variant and the other isn't, the variant goes last
+      if (aIsVariant && !bIsVariant) return 1;
+      if (!aIsVariant && bIsVariant) return -1;
 
-      // If neither has Italic or both have Italic, sort by Bold
-      if (aHasBold && !bHasBold) return 1;
-      if (!aHasBold && bHasBold) return -1;
+      // If one mentions regular and the other doesn't, the regular goes first
+      if (aHasRegular && !bHasRegular) return 1;
+      if (!aHasRegular && bHasRegular) return -1;
 
       return 0;
     });
@@ -377,4 +378,5 @@ const main = async (topLevelFolders: string[], skipCount: number = 0) => {
 // main(["ufl", "apache", "ofl"]);
 
 // main(["ufl"]);
-main(["apache"]);
+// main(["apache"]);
+// main(["ofl"], 474);
