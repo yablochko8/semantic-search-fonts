@@ -35,6 +35,10 @@ the lazy dog!`
   return buffer;
 };
 
+const bufferToBase64 = (buffer: Buffer) => {
+  return buffer.toString("base64");
+};
+
 /**
  * Takes a base64 image of a font and returns a list of descriptors.
  * Look up https://models.dev if changing the model name.
@@ -42,7 +46,9 @@ the lazy dog!`
 export const getDescriptors = async (
   base64Image: string
 ): Promise<string[]> => {
-  const MODEL = "pixtral-large-latest";
+  // const MODEL = "pixtral-large-latest";
+  const MODEL = "pixtral-12b";
+
   const PROMPT_TEXT = `You are an expert typographer. I'm going to share an image of a font typeface with you. Please analyze the style and essence of the font typeface. Return between 15 and 25 unique, lower-case, hyphen-separated descriptors ranked from most to least characteristic. Descriptors can capture the style, typographical characteristics, likely usage, and anything else that defines the typeface. Hyphenated words and very short phrases are also ok. Format your response as a JSON object with the following structure:
   
   {
@@ -86,19 +92,21 @@ export const getDescriptors = async (
   } else if (cleanedContent.startsWith("```")) {
     cleanedContent = cleanedContent.replace(/^```\n/, "").replace(/\n```$/, "");
   }
-
-  const parsedContent = JSON.parse(cleanedContent);
-
-  if (!parsedContent.descriptors) return [];
-
-  return parsedContent.descriptors;
+  try {
+    const parsedContent = JSON.parse(cleanedContent);
+    if (!parsedContent.descriptors) return [];
+    return parsedContent.descriptors;
+  } catch (error) {
+    console.error("Failed to parse AI response:", error);
+    return [];
+  }
 };
 
 // const testImageAssess = async () => {
 //   const buffer = await generateSamplePng(
 //     "/Users/factions/dev/cloned-projects/fonts/ofl/akronim/Akronim-Regular.ttf"
 //   );
-//   const descriptors = await getDescriptors(bufferToString(buffer));
+//   const descriptors = await getDescriptors(bufferToBase64(buffer));
 //   console.log(descriptors);
 // };
 

@@ -111,6 +111,7 @@ const parseP1FromHtml = (content: string): string | null => {
 };
 
 const getAiDescriptors = async (ttfUrl: string): Promise<string[]> => {
+  console.log("printing image", ttfUrl);
   const imageBuffer = await generateSamplePng(ttfUrl);
   console.log("image made with buffer length", imageBuffer.length);
   const descriptors = await getDescriptors(imageBuffer.toString("base64"));
@@ -331,7 +332,7 @@ const scrapeAndSaveFont = async (
 // FULL SCRIPT
 ////////////////////////////////////
 
-const main = async (topLevelFolders: string[]) => {
+const main = async (topLevelFolders: string[], skipCount: number = 0) => {
   // Get all subfolders immediately in the top level folders
   const subfolders: string[] = (
     await Promise.all(
@@ -350,7 +351,7 @@ const main = async (topLevelFolders: string[]) => {
 
   // Scrape and save each font consecutively
   const results: { name: string; success: boolean }[] = [];
-  for (let i = 0; i < subfolders.length; i++) {
+  for (let i = skipCount; i < subfolders.length; i++) {
     const subfolder = subfolders[i];
     console.log(`Processing ${i + 1}/${subfolders.length}: ${subfolder}`);
     const result = await scrapeAndSaveFont(subfolder);
@@ -375,5 +376,5 @@ const main = async (topLevelFolders: string[]) => {
 
 // main(["ufl", "apache", "ofl"]);
 
-main(["ufl"]);
-// main(["apache"]);
+// main(["ufl"]);
+main(["apache"]);
