@@ -2,6 +2,8 @@ import * as fs from "fs/promises";
 import { clientSupabase } from "./connections/clientSupabase";
 import { clientMistral } from "./connections/clientMistral";
 import path from "path";
+import { generateSamplePng } from "./imagePrint";
+import { getDescriptors } from "./imageFunctions";
 
 ////////////////////////////////////
 // Types
@@ -108,11 +110,10 @@ const parseP1FromHtml = (content: string): string | null => {
   return p1WithoutTags;
 };
 
-const getAiDescriptors = async (fontUrl: string): Promise<string[]> => {
-  await delay(100);
-  // TODO: This function will send an image of of the typeface to an AI model and ask for it to be characterized.
-
-  return [];
+const getAiDescriptors = async (ttfUrl: string): Promise<string[]> => {
+  const imageBuffer = await generateSamplePng(ttfUrl);
+  const descriptors = await getDescriptors(imageBuffer.toString("base64"));
+  return descriptors;
 };
 
 const getSummaryText = (
@@ -258,7 +259,49 @@ const scrapeFolder = async (
 
     const description_p1 = parseP1FromHtml(usableHtml);
 
-    const ai_descriptors = await getAiDescriptors(url);
+    // Find all .ttf files in the folder
+    const fontDir = path.join(
+      __dirname,
+      `../../cloned-projects/fonts/${folderPath}`
+    );
+    const files = await fs.readdir(fontDir);
+    console.log({ files });
+    const ttfFiles = files.filter((f) => f.endsWith(".ttf"));
+
+    if (ttfFiles.length === 0) {
+      console.error(`No .ttf files found in ${folderPath}`);
+      return null;
+    }
+
+    let chosenTtf = ttfFiles[0]; // Default to first one
+
+    if (ttfFiles.length > 1) {
+      // Look for files with "Regular" in the name
+      const regularFiles = ttfFiles.filter((f) => f.includes("Regular"));
+
+      if (regularFiles.length === 1) {
+        chosenTtf = regularFiles[0];
+      } else if (regularFiles.length > 1) {
+        // Filter out ones with Italic or Bold
+        const cleanRegularFiles = regularFiles.filter(
+          (f) => !f.includes("Italic") && !f.includes("Bold")
+        );
+
+        if (cleanRegularFiles.length >= 1) {
+          if (cleanRegularFiles.length > 1) {
+            console.warn(
+              `Multiple candidate TTF files found in ${folderPath}, using first one`
+            );
+          }
+          chosenTtf = cleanRegularFiles[0];
+        }
+      }
+    }
+
+    const ttfUrl = path.join(fontDir, chosenTtf);
+
+    const ai_descriptors = await getAiDescriptors(ttfUrl);
+    console.log(ai_descriptors);
 
     const summary_text_v1 = getSummaryText(
       fontBasics,
