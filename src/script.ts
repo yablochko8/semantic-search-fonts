@@ -347,3 +347,7 @@ const main = async (topLevelFolders: string[]) => {
 // To run this, uncomment the line below and then in Terminal: bun src/script.ts
 
 // main(["ufl", "apache", "ofl"]);
+
+const test = getUrlFromName("Aclonica");
+
+console.log(test);
