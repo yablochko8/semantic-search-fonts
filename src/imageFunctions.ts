@@ -35,10 +35,6 @@ the lazy dog!`
   return buffer;
 };
 
-const bufferToString = (buffer: Buffer) => {
-  return buffer.toString("base64");
-};
-
 /**
  * Takes a base64 image of a font and returns a list of descriptors.
  * Look up https://models.dev if changing the model name.
