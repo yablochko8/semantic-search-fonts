@@ -2,7 +2,7 @@ import * as fs from "fs/promises";
 import { clientSupabase } from "./connections/clientSupabase";
 import { clientMistral } from "./connections/clientMistral";
 import path from "path";
-import { generateSamplePng } from "./imagePrint";
+import { generateSamplePng } from "./imageFunctions";
 import { getDescriptors } from "./imageFunctions";
 
 ////////////////////////////////////
@@ -23,11 +23,11 @@ type FontEnrichmentReady = FontBasics & {
   url: string | null; // Can be constructed from name, separated by +, e.g.: https://fonts.googleapis.com/css2?family=Family+Name
   description_p1: string | null; // Take the first <p> element of DESCRIPTION.en_us.html
   ai_descriptors: string[]; // List of adjectives from multimodal AI assessment of visual
-  summary_text_v1: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
+  summary_text_v2: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
 };
 
 type FontDBReady = FontEnrichmentReady & {
-  embedding_mistral_v1: string;
+  embedding_mistral_v2: string;
 };
 
 ////////////////////////////////////
@@ -303,23 +303,23 @@ const scrapeFolder = async (
     const ai_descriptors = await getAiDescriptors(ttfUrl);
     console.log(ai_descriptors);
 
-    const summary_text_v1 = getSummaryText(
+    const summaryText = getSummaryText(
       fontBasics,
       description_p1 || "",
       ai_descriptors
     );
 
-    const embeddings = await getEmbeddings([summary_text_v1]);
+    const embeddings = await getEmbeddings([summaryText]);
 
-    const embedding_mistral_v1 = embeddings[0] || "";
+    const embedding_mistral_v2 = embeddings[0] || "";
 
     const fontDBReady: FontDBReady = {
       ...fontBasics,
       url,
       description_p1,
       ai_descriptors,
-      summary_text_v1,
-      embedding_mistral_v1,
+      summary_text_v2: summaryText,
+      embedding_mistral_v2,
     };
 
     return fontDBReady;
@@ -390,7 +390,3 @@ const main = async (topLevelFolders: string[]) => {
 // To run this, uncomment the line below and then in Terminal: bun src/script.ts
 
 // main(["ufl", "apache", "ofl"]);
-
-const test = getUrlFromName("Aclonica");
-
-console.log(test);
