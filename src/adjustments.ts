@@ -1,21 +1,28 @@
 import { clientSupabase } from "./connections/clientSupabase";
-import { getEmbeddings, getSummaryText } from "./script";
+import {
+  getEmbeddings,
+  getSummaryTextAdvanced,
+  getSummaryTextSimple,
+} from "./script";
 
 /** Script that goes through every entry in the fonts table and creates a new "summary" (based on a new formula) and a fresh embedding based on that. */
-const rewriteSummaries20250714 = async (startIndex: number = 0) => {
+const rewriteSummaries20250714 = async (
+  batchIndex: number = 0,
+  indexWithinBatch: number = 0
+) => {
   const { data, error } = await clientSupabase
     .from("fonts")
     .select("*")
-    .limit(5000);
+    .range(batchIndex * 1000, (batchIndex + 1) * 1000);
   if (error) {
     console.error(error);
     return;
   }
   const sortedData = data.sort((a, b) => a.id - b.id);
 
-  let index = startIndex;
+  let trackingIndex = indexWithinBatch;
 
-  for (const font of sortedData.slice(startIndex)) {
+  for (const font of sortedData.slice(indexWithinBatch)) {
     const fontBasics = {
       name: font.name,
       category: font.category,
@@ -25,19 +32,25 @@ const rewriteSummaries20250714 = async (startIndex: number = 0) => {
       stroke: font.stroke,
       year: font.year,
     };
-    const newSummary = getSummaryText(
+    const newSummarySimple = getSummaryTextSimple(
       fontBasics,
       font.description_p1 || "",
       font.ai_descriptors || []
     );
-    // console.log(newSummary);
+    console.log("=====");
+    console.log(newSummarySimple);
+    const newSummaryAdvanced = await getSummaryTextAdvanced(newSummarySimple);
+    console.log("=====");
+    console.log(newSummaryAdvanced);
+    console.log("=====");
 
-    const newEmbedding = await getEmbeddings([newSummary])[0];
+    const embeddings = await getEmbeddings([newSummaryAdvanced]);
+    const newEmbedding = embeddings[0];
 
     const { error: updateError } = await clientSupabase
       .from("fonts")
       .update({
-        summary_text_v2: newSummary,
+        summary_text_v2: newSummaryAdvanced,
         embedding_mistral_v2: newEmbedding,
       })
       .eq("id", font.id);
@@ -46,11 +59,18 @@ const rewriteSummaries20250714 = async (startIndex: number = 0) => {
       console.error(updateError);
     } else {
       console.log(
-        `${index}/${sortedData.length}: Updated font ${font.name} (id: ${font.id})`
+        `${trackingIndex + 1}/${sortedData.length}: Updated font ${
+          font.name
+        } (id: ${font.id})`
       );
     }
-    index++;
+    trackingIndex++;
   }
 };
 
-rewriteSummaries20250714(100);
+// Run these one at a time!
+// bun --watch src/adjustments.ts
+rewriteSummaries20250714(0);
+// rewriteSummaries20250714(1);
+// rewriteSummaries20250714(2);
+// etc

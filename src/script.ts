@@ -19,14 +19,14 @@ type FontBasics = {
   year: number | null; // from METADATA.pb (first four digits of date_added)
 };
 
-type FontEnrichmentReady = FontBasics & {
+type FontEmbeddingReady = FontBasics & {
   url: string | null; // Can be constructed from name, separated by +, e.g.: https://fonts.googleapis.com/css2?family=Family+Name
   description_p1: string | null; // Take the first <p> element of DESCRIPTION.en_us.html
   ai_descriptors: string[]; // List of adjectives from multimodal AI assessment of visual
   summary_text_v2: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
 };
 
-type FontDBReady = FontEnrichmentReady & {
+type FontDBReady = FontEmbeddingReady & {
   embedding_mistral_v2: string;
 };
 
@@ -208,7 +208,7 @@ const getAiDescriptors = async (ttfUrl: string): Promise<string[]> => {
   return descriptors;
 };
 
-export const getSummaryText = (
+export const getSummaryTextSimple = (
   fontBasics: FontBasics,
   p1Description: string,
   descriptors: string[]
@@ -229,6 +229,25 @@ export const getSummaryText = (
   const { name, year, designer } = fontBasics;
 
   return `${adjectivesCombined} font designed by ${designer} in ${year}. ${p1Description}`;
+};
+
+export const getSummaryTextAdvanced = async (
+  simpleSummary: string
+): Promise<string> => {
+  const SYSTEM_PROMPT = `You are a Machine Learning expert. The user will describe a font to you. You will respond with a list of words and phrases that capture the nature of that font in terms that make it absolutely perfect for a text embedding. You will summarise all the important qualities about the font. You will not use any words that are negated, because you know that in the context of an embedding they confuse the result. You will expand on the description with relevant synonyms. You may list some situations where a font like this would be appropriate. You may include the font name and designer name if it's unlikely to cause confusion. No markdown, no chit chat, just a comma-separated list of approximately 30 descriptors and relevant phrases.`;
+
+  const response = await clientMistral.chat.complete({
+    model: "mistral-medium-latest",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: simpleSummary },
+    ],
+  });
+
+  const aiSummary = response.choices?.[0]?.message?.content || simpleSummary;
+  // "Trim" in this context means remove any quotes that may be wrapping the summary
+  const trimmedSummary = String(aiSummary).replace(/^"|"$/g, "");
+  return trimmedSummary;
 };
 
 /** Returns stringified embeddings, as that's what Supabase will want. Handles batches of inputs.
@@ -315,13 +334,15 @@ const scrapeFolder = async (
   const ttfUrl = path.join(fontDir, regularTtfFilename);
   const ai_descriptors = await getAiDescriptors(ttfUrl);
 
-  const summaryText = getSummaryText(
+  const summaryTextSimple = getSummaryTextSimple(
     fontBasics,
     description_p1 || "",
     ai_descriptors
   );
 
-  const embeddings = await getEmbeddings([summaryText]);
+  const summaryTextAdvanced = await getSummaryTextAdvanced(summaryTextSimple);
+
+  const embeddings = await getEmbeddings([summaryTextAdvanced]);
 
   const embedding_mistral_v2 = embeddings[0] || "";
 
@@ -330,7 +351,7 @@ const scrapeFolder = async (
     url,
     description_p1,
     ai_descriptors,
-    summary_text_v2: summaryText,
+    summary_text_v2: summaryTextAdvanced,
     embedding_mistral_v2,
   };
 
