@@ -403,12 +403,73 @@ Serving up sans serif realness, success!
 
 In my case that's https://brandmint.ai/font-finder
 
+![Demo 1 Screenshot](./screenshots/demo-1.png)
+
 The server code matches the pattern of a testQuery above.
+
+On the frontend, the only novel piece here really is having to load lots of fonts dynamically on the fly.
+
+Here's what that looks like in React:
+
+1. We trigger a `useEffect` hook when the `font.url` loads
+2. Inside the effect, we dynamically create a `<link>` element to load the font CSS
+3. Add in error handling and a cleanup function to remove the link when the component unmounts
+4. In the JSX, render the loaded font (or a system fallback)
+
+The code below shows the implementation:
+
+```ts
+useEffect(() => {
+  const loadFont = async () => {
+    try {
+      // Create a link element to load the font
+      const link = document.createElement("link");
+      link.href = font.url;
+      link.rel = "stylesheet";
+      link.type = "text/css";
+
+      // Wait for the font to load
+      link.onload = () => {
+        setFontLoaded(true);
+      };
+
+      link.onerror = () => {
+        console.error("Failed to load font:", font.name);
+        setFontLoaded(true); // Still set to true to show fallback
+      };
+
+      document.head.appendChild(link);
+
+      // Cleanup function
+      return () => {
+        document.head.removeChild(link);
+      };
+    } catch (error) {
+      console.error("Error loading font:", error);
+      setFontLoaded(true); // Show fallback
+    }
+  };
+
+  loadFont();
+}, [font.url]);
+```
+
+Then inject the name into the JSX...
+
+```jsx
+<div
+  style={{
+    fontFamily: fontLoaded ? font.name : "system-ui, sans-serif",
+  }}
+>
+  {fontLoaded ? displayText : "Loading font..."}
+</div>
+```
 
 ## Other notes
 
 - This workflow was similar to something similar I did [with colors](https://lui.ie/guides/semantic-search-colors) last week, but still took in the order of 2 days. The hardest work to optimize is understanding a new dataset.
-- Embedding costs for this project were trivial. 30k entries came in under $0.02 for Mistral
+- Embedding costs for this project were trivial. Less than $0.01 for Mistral.
 
 ## Links
 

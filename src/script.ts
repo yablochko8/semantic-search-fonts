@@ -2,6 +2,8 @@ import * as fs from "fs/promises";
 import { clientSupabase } from "./connections/clientSupabase";
 import { clientMistral } from "./connections/clientMistral";
 import path from "path";
+import { generateSamplePng } from "./imageFunctions";
+import { getDescriptors } from "./imageFunctions";
 
 ////////////////////////////////////
 // Types
@@ -21,11 +23,11 @@ type FontEnrichmentReady = FontBasics & {
   url: string | null; // Can be constructed from name, separated by +, e.g.: https://fonts.googleapis.com/css2?family=Family+Name
   description_p1: string | null; // Take the first <p> element of DESCRIPTION.en_us.html
   ai_descriptors: string[]; // List of adjectives from multimodal AI assessment of visual
-  summary_text_v1: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
+  summary_text_v2: string | null; // Combination of all relevant descriptive elements. This is what we will vectorize.
 };
 
 type FontDBReady = FontEnrichmentReady & {
-  embedding_mistral_v1: string;
+  embedding_mistral_v2: string;
 };
 
 ////////////////////////////////////
@@ -108,11 +110,12 @@ const parseP1FromHtml = (content: string): string | null => {
   return p1WithoutTags;
 };
 
-const getAiDescriptors = async (fontUrl: string): Promise<string[]> => {
-  await delay(100);
-  // TODO: This function will send an image of of the typeface to an AI model and ask for it to be characterized.
-
-  return [];
+const getAiDescriptors = async (ttfUrl: string): Promise<string[]> => {
+  console.log("printing image", ttfUrl);
+  const imageBuffer = await generateSamplePng(ttfUrl);
+  console.log("image made with buffer length", imageBuffer.length);
+  const descriptors = await getDescriptors(imageBuffer.toString("base64"));
+  return descriptors;
 };
 
 const getSummaryText = (
@@ -179,36 +182,27 @@ const saveFontEntry = async (font: FontDBReady) => {
 const scrapeFolder = async (
   folderPath: string
 ): Promise<FontDBReady | null> => {
+  const fontDir = path.join(
+    __dirname,
+    `../../cloned-projects/fonts/${folderPath}`
+  );
+  const fileNames = await fs.readdir(fontDir);
+
   // Let's first check if we have a /METADATA.pb and /DESCRIPTION.en_us.html
+  // article/ARTICLE.en_us.html is the fallback source for description
   // If either is missing, we will skip this font.
-  const metadataPath = path.join(
-    __dirname,
-    `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
-  );
-  const descriptionPath = path.join(
-    __dirname,
-    `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
-  );
+  const metadataExists = fileNames.includes("METADATA.pb");
+  const descriptionExists = fileNames.includes("DESCRIPTION.en_us.html");
+
   const articlePath = path.join(
     __dirname,
     `../../cloned-projects/fonts/${folderPath}/article/ARTICLE.en_us.html`
   );
-
-  const metadataExists = await fs
-    .access(metadataPath)
-    .then(() => true)
-    .catch(() => false);
-  const descriptionExists = await fs
-    .access(descriptionPath)
-    .then(() => true)
-    .catch(() => false);
   const articleExists = await fs
     .access(articlePath)
     .then(() => true)
     .catch(() => false);
 
-  // We definitely need a metadata file
-  // We also need a description file OR an article file
   if (!metadataExists || (!descriptionExists && !articleExists)) {
     console.error(`Missing files for ${folderPath}`);
     return null;
@@ -258,25 +252,63 @@ const scrapeFolder = async (
 
     const description_p1 = parseP1FromHtml(usableHtml);
 
-    const ai_descriptors = await getAiDescriptors(url);
+    // Find all .ttf files in the folder
 
-    const summary_text_v1 = getSummaryText(
+    const ttfFiles = fileNames.filter((f) => f.endsWith(".ttf"));
+
+    if (ttfFiles.length === 0) {
+      console.error(`No .ttf files found in ${folderPath}`);
+      return null;
+    }
+
+    // Sort the ttf files with the following rules:
+    // 1. Regular fonts first
+    // 2. Variant fonts (Italic, Bold, Black, etc) files second
+    const sortedTtfFiles = ttfFiles.sort((a, b) => {
+      const aHasRegular = a.includes("Regular");
+      const bHasRegular = b.includes("Regular");
+      const aIsVariant =
+        a.includes("Italic") || a.includes("Bold") || a.includes("Black");
+      const bIsVariant =
+        b.includes("Italic") || b.includes("Bold") || b.includes("Black");
+
+      // Remember: -1 means first, 1 means last
+      // When comparing (a,b), the return value references the first argument (a)
+
+      // If one is a variant and the other isn't, the non-variant goes first
+      if (!aIsVariant && bIsVariant) return -1;
+      if (aIsVariant && !bIsVariant) return 1;
+
+      // If one mentions regular and the other doesn't, the regular goes first
+      if (aHasRegular && !bHasRegular) return -1;
+      if (!aHasRegular && bHasRegular) return 1;
+
+      return 0;
+    });
+    const chosenTtf = sortedTtfFiles[0];
+
+    const ttfUrl = path.join(fontDir, chosenTtf);
+    console.log("fetching descriptors for", ttfUrl);
+    const ai_descriptors = await getAiDescriptors(ttfUrl);
+    console.log(ai_descriptors);
+
+    const summaryText = getSummaryText(
       fontBasics,
       description_p1 || "",
       ai_descriptors
     );
 
-    const embeddings = await getEmbeddings([summary_text_v1]);
+    const embeddings = await getEmbeddings([summaryText]);
 
-    const embedding_mistral_v1 = embeddings[0] || "";
+    const embedding_mistral_v2 = embeddings[0] || "";
 
     const fontDBReady: FontDBReady = {
       ...fontBasics,
       url,
       description_p1,
       ai_descriptors,
-      summary_text_v1,
-      embedding_mistral_v1,
+      summary_text_v2: summaryText,
+      embedding_mistral_v2,
     };
 
     return fontDBReady;
@@ -304,7 +336,7 @@ const scrapeAndSaveFont = async (
 // FULL SCRIPT
 ////////////////////////////////////
 
-const main = async (topLevelFolders: string[]) => {
+const main = async (topLevelFolders: string[], skipCount: number = 0) => {
   // Get all subfolders immediately in the top level folders
   const subfolders: string[] = (
     await Promise.all(
@@ -323,7 +355,7 @@ const main = async (topLevelFolders: string[]) => {
 
   // Scrape and save each font consecutively
   const results: { name: string; success: boolean }[] = [];
-  for (let i = 0; i < subfolders.length; i++) {
+  for (let i = skipCount; i < subfolders.length; i++) {
     const subfolder = subfolders[i];
     console.log(`Processing ${i + 1}/${subfolders.length}: ${subfolder}`);
     const result = await scrapeAndSaveFont(subfolder);
@@ -347,3 +379,7 @@ const main = async (topLevelFolders: string[]) => {
 // To run this, uncomment the line below and then in Terminal: bun src/script.ts
 
 // main(["ufl", "apache", "ofl"]);
+
+// main(["ufl"]);
+// main(["apache"]);
+// main(["ofl"], 474);
