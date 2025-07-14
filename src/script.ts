@@ -272,13 +272,16 @@ const scrapeFolder = async (
       const bIsVariant =
         b.includes("Italic") || b.includes("Bold") || b.includes("Black");
 
-      // If one is a variant and the other isn't, the variant goes last
-      if (aIsVariant && !bIsVariant) return 1;
+      // Remember: -1 means first, 1 means last
+      // When comparing (a,b), the return value references the first argument (a)
+
+      // If one is a variant and the other isn't, the non-variant goes first
       if (!aIsVariant && bIsVariant) return -1;
+      if (aIsVariant && !bIsVariant) return 1;
 
       // If one mentions regular and the other doesn't, the regular goes first
-      if (aHasRegular && !bHasRegular) return 1;
-      if (!aHasRegular && bHasRegular) return -1;
+      if (aHasRegular && !bHasRegular) return -1;
+      if (!aHasRegular && bHasRegular) return 1;
 
       return 0;
     });
