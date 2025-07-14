@@ -208,7 +208,7 @@ const getAiDescriptors = async (ttfUrl: string): Promise<string[]> => {
   return descriptors;
 };
 
-const getSummaryText = (
+export const getSummaryText = (
   fontBasics: FontBasics,
   p1Description: string,
   descriptors: string[]
@@ -234,7 +234,7 @@ const getSummaryText = (
 /** Returns stringified embeddings, as that's what Supabase will want. Handles batches of inputs.
  * Returns empty array if there's any error.
  */
-const getEmbeddings = async (inputs: string[]): Promise<string[]> => {
+export const getEmbeddings = async (inputs: string[]): Promise<string[]> => {
   const response = await clientMistral.embeddings.create({
     model: "mistral-embed",
     inputs: inputs,
