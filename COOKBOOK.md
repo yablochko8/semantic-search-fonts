@@ -299,6 +299,23 @@ My ETL script for this can be found here:
 
 I've kept it heavily commented so if you're following this guide with the exact same source data now is the time to dive into that code.
 
+Here's are the main elements of the flow:
+
+1. Basic validation - confirm the font is not on an exclusion list (we don't want notation fonts like jsmath) and that all the expected files are present
+2. parseFontBasicsFromPb - gets the basic text values from the `METADATA.pb` file
+3. parseP1FromHtml - I just a short description for each font, so I'm taking the text of the first `<p>` value I can find in either `DESCRIPTION.en_us.html` or inside `article/ARTICLE.en_us.html`
+
+## Step 7a - Add in a vital ingredient: AI assessment of a picture of the font text
+
+For my first pass at this I thought I could rely on the text descriptions, but the descriptions sometimes gave offbeat results.
+
+(If you're curious I've left this version live on brandmint, just select Algorithm: V1)
+
+To get more standardized assessment, we do the following:
+
+1. generateSamplePng - take in a TTF file and spit out the buffer of a representative image in that font
+2. getDescriptors - pass the image buffer to a multimodal AI model (I used Mistral's `pixtral-12b`)
+
 ## Step 8 - Save our fonts to the database
 
 At this point I ran my full ETL script, as there are less than 2,000 entries so it's a small enough dataset that it seemed silly to split it out.

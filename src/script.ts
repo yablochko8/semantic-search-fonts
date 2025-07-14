@@ -63,9 +63,31 @@ const getStringTimestamp = () =>
     .replace(/\s/g, "-")
     .replace(/--/g, "-");
 
+/** If any part of the folderPath string (lower-cased) matches any of the exclusion strings, return true. */
+const isExcluded = (folderPath: string, exclusionList: string[]) =>
+  exclusionList.some((exclusion) =>
+    folderPath.toLowerCase().includes(exclusion.toLowerCase())
+  );
+
 ////////////////////////////////////
 // Single-Stage Functions
 ////////////////////////////////////
+
+const fetchPbMetadata = async (
+  fontProjectRoot: string,
+  folderPath: string
+): Promise<string | null> => {
+  try {
+    const pbMetadata = await fs.readFile(
+      path.join(__dirname, `${fontProjectRoot}/${folderPath}/METADATA.pb`),
+      "utf8"
+    );
+    return pbMetadata;
+  } catch (error) {
+    console.error(`Error reading METADATA.pb for ${folderPath}:`, error);
+    return null;
+  }
+};
 
 const parseFontBasicsFromPb = (content: string): FontBasics | null => {
   const lines = content.split("\n").filter((line) => line.trim());
@@ -103,11 +125,79 @@ const parseFontBasicsFromPb = (content: string): FontBasics | null => {
   };
 };
 
+const fetchDescriptiveHtml = async (
+  fontProjectRoot: string,
+  folderPath: string
+): Promise<string | null> => {
+  try {
+    const descriptionHtml = await fs.readFile(
+      path.join(
+        __dirname,
+        `${fontProjectRoot}/${folderPath}/DESCRIPTION.en_us.html`
+      ),
+      "utf8"
+    );
+    if (descriptionHtml.length > 0) return descriptionHtml;
+  } catch (error) {}
+
+  try {
+    const articleHtml = await fs.readFile(
+      path.join(
+        __dirname,
+        `${fontProjectRoot}/${folderPath}/article/ARTICLE.en_us.html`
+      ),
+      "utf8"
+    );
+    if (articleHtml.length > 0) return articleHtml;
+  } catch (error) {
+    console.error(
+      `Error reading ARTICLE.en_us.html for a folder that has no DESCRIPTION.en_us.html, ${folderPath}:`,
+      error
+    );
+    return null;
+  }
+  return null;
+};
+
 const parseP1FromHtml = (content: string): string | null => {
   const p1 = content.split("<p>")[1].split("</p>")[0];
   // There may be other tags within p1 (e.g. <a>, <br>, <strong> etc). We want to remove the tags, but keep the text.
   const p1WithoutTags = p1.replace(/<[^>]*>?/g, "");
   return p1WithoutTags;
+};
+
+const findRegularTtf = (fileNames: string[]) => {
+  const ttfFiles = fileNames.filter((f) => f.endsWith(".ttf"));
+  if (ttfFiles.length === 0) {
+    console.error(`No .ttf files found among ${fileNames}`);
+    return null;
+  }
+
+  // Sort the ttf files with the following rules:
+  // 1. Regular fonts first
+  // 2. Variant fonts (Italic, Bold, Black, etc) files second
+  const sortedTtfFiles = ttfFiles.sort((a, b) => {
+    const aHasRegular = a.includes("Regular");
+    const bHasRegular = b.includes("Regular");
+    const aIsVariant =
+      a.includes("Italic") || a.includes("Bold") || a.includes("Black");
+    const bIsVariant =
+      b.includes("Italic") || b.includes("Bold") || b.includes("Black");
+
+    // Remember: -1 means first, 1 means last
+    // When comparing (a,b), the return value references the first argument (a)
+
+    // If one is a variant and the other isn't, the non-variant goes first
+    if (!aIsVariant && bIsVariant) return -1;
+    if (aIsVariant && !bIsVariant) return 1;
+
+    // If one mentions regular and the other doesn't, the regular goes first
+    if (aHasRegular && !bHasRegular) return -1;
+    if (!aHasRegular && bHasRegular) return 1;
+
+    return 0;
+  });
+  return sortedTtfFiles[0];
 };
 
 const getAiDescriptors = async (ttfUrl: string): Promise<string[]> => {
@@ -138,7 +228,7 @@ const getSummaryText = (
 
   const { name, year, designer } = fontBasics;
 
-  return `${name} is a ${adjectivesCombined} font designed by ${designer} in ${year}. ${p1Description}`;
+  return `${adjectivesCombined} font designed by ${designer} in ${year}. ${p1Description}`;
 };
 
 /** Returns stringified embeddings, as that's what Supabase will want. Handles batches of inputs.
@@ -180,12 +270,15 @@ const saveFontEntry = async (font: FontDBReady) => {
 
 /** Parent script to pull the others together. */
 const scrapeFolder = async (
+  fontProjectRoot: string,
   folderPath: string
 ): Promise<FontDBReady | null> => {
-  const fontDir = path.join(
-    __dirname,
-    `../../cloned-projects/fonts/${folderPath}`
-  );
+  const EXCLUSION_LIST = ["jsmath"];
+  if (isExcluded(folderPath, EXCLUSION_LIST)) {
+    return null;
+  }
+
+  const fontDir = path.join(__dirname, `${fontProjectRoot}/${folderPath}`);
   const fileNames = await fs.readdir(fontDir);
 
   // Let's first check if we have a /METADATA.pb and /DESCRIPTION.en_us.html
@@ -193,137 +286,65 @@ const scrapeFolder = async (
   // If either is missing, we will skip this font.
   const metadataExists = fileNames.includes("METADATA.pb");
   const descriptionExists = fileNames.includes("DESCRIPTION.en_us.html");
+  const articleFolderExists = fileNames.includes("article");
 
-  const articlePath = path.join(
-    __dirname,
-    `../../cloned-projects/fonts/${folderPath}/article/ARTICLE.en_us.html`
-  );
-  const articleExists = await fs
-    .access(articlePath)
-    .then(() => true)
-    .catch(() => false);
-
-  if (!metadataExists || (!descriptionExists && !articleExists)) {
+  if (!metadataExists || (!descriptionExists && !articleFolderExists)) {
     console.error(`Missing files for ${folderPath}`);
     return null;
   }
 
-  try {
-    const pbMetadata = await fs.readFile(
-      path.join(
-        __dirname,
-        `../../cloned-projects/fonts/${folderPath}/METADATA.pb`
-      ),
-      "utf8"
-    );
-    const fontBasics = parseFontBasicsFromPb(pbMetadata);
+  const pbMetadata = await fetchPbMetadata(fontProjectRoot, folderPath);
+  if (!pbMetadata) return null;
 
-    if (!fontBasics) {
-      return null;
-    }
+  const fontBasics = parseFontBasicsFromPb(pbMetadata);
+  if (!fontBasics) return null;
 
-    const url = getUrlFromName(fontBasics.name);
+  const url = getUrlFromName(fontBasics.name);
 
-    const html = !descriptionExists
-      ? null
-      : await fs.readFile(
-          path.join(
-            __dirname,
-            `../../cloned-projects/fonts/${folderPath}/DESCRIPTION.en_us.html`
-          ),
-          "utf8"
-        );
+  const descriptiveHtml = await fetchDescriptiveHtml(
+    fontProjectRoot,
+    folderPath
+  );
+  if (!descriptiveHtml) return null;
 
-    const usableHtml =
-      html && html.length > 0
-        ? html
-        : await fs.readFile(
-            path.join(
-              __dirname,
-              `../../cloned-projects/fonts/${folderPath}/article/ARTICLE.en_us.html`
-            ),
-            "utf8"
-          );
+  const description_p1 = parseP1FromHtml(descriptiveHtml);
 
-    if (usableHtml.length === 0) {
-      console.error(`No usable HTML for ${folderPath}`);
-      return null;
-    }
+  const regularTtfFilename = findRegularTtf(fileNames);
+  if (!regularTtfFilename) return null;
 
-    const description_p1 = parseP1FromHtml(usableHtml);
+  const ttfUrl = path.join(fontDir, regularTtfFilename);
+  const ai_descriptors = await getAiDescriptors(ttfUrl);
 
-    // Find all .ttf files in the folder
+  const summaryText = getSummaryText(
+    fontBasics,
+    description_p1 || "",
+    ai_descriptors
+  );
 
-    const ttfFiles = fileNames.filter((f) => f.endsWith(".ttf"));
+  const embeddings = await getEmbeddings([summaryText]);
 
-    if (ttfFiles.length === 0) {
-      console.error(`No .ttf files found in ${folderPath}`);
-      return null;
-    }
+  const embedding_mistral_v2 = embeddings[0] || "";
 
-    // Sort the ttf files with the following rules:
-    // 1. Regular fonts first
-    // 2. Variant fonts (Italic, Bold, Black, etc) files second
-    const sortedTtfFiles = ttfFiles.sort((a, b) => {
-      const aHasRegular = a.includes("Regular");
-      const bHasRegular = b.includes("Regular");
-      const aIsVariant =
-        a.includes("Italic") || a.includes("Bold") || a.includes("Black");
-      const bIsVariant =
-        b.includes("Italic") || b.includes("Bold") || b.includes("Black");
+  const fontDBReady: FontDBReady = {
+    ...fontBasics,
+    url,
+    description_p1,
+    ai_descriptors,
+    summary_text_v2: summaryText,
+    embedding_mistral_v2,
+  };
 
-      // Remember: -1 means first, 1 means last
-      // When comparing (a,b), the return value references the first argument (a)
-
-      // If one is a variant and the other isn't, the non-variant goes first
-      if (!aIsVariant && bIsVariant) return -1;
-      if (aIsVariant && !bIsVariant) return 1;
-
-      // If one mentions regular and the other doesn't, the regular goes first
-      if (aHasRegular && !bHasRegular) return -1;
-      if (!aHasRegular && bHasRegular) return 1;
-
-      return 0;
-    });
-    const chosenTtf = sortedTtfFiles[0];
-
-    const ttfUrl = path.join(fontDir, chosenTtf);
-    console.log("fetching descriptors for", ttfUrl);
-    const ai_descriptors = await getAiDescriptors(ttfUrl);
-    console.log(ai_descriptors);
-
-    const summaryText = getSummaryText(
-      fontBasics,
-      description_p1 || "",
-      ai_descriptors
-    );
-
-    const embeddings = await getEmbeddings([summaryText]);
-
-    const embedding_mistral_v2 = embeddings[0] || "";
-
-    const fontDBReady: FontDBReady = {
-      ...fontBasics,
-      url,
-      description_p1,
-      ai_descriptors,
-      summary_text_v2: summaryText,
-      embedding_mistral_v2,
-    };
-
-    return fontDBReady;
-  } catch (error) {
-    console.error(`Error processing folder ${folderPath}:`, error);
-    return null;
-  }
+  return fontDBReady;
 };
 
 const scrapeAndSaveFont = async (
+  fontProjectRoot: string,
   folderPath: string
 ): Promise<{ name: string; success: boolean }> => {
-  const font = await scrapeFolder(folderPath);
+  const font = await scrapeFolder(fontProjectRoot, folderPath);
 
   if (!font) {
+    console.warn(`Skipping ${folderPath} because it's missing files`);
     return { name: folderPath, success: false };
   }
 
@@ -336,13 +357,17 @@ const scrapeAndSaveFont = async (
 // FULL SCRIPT
 ////////////////////////////////////
 
-const main = async (topLevelFolders: string[], skipCount: number = 0) => {
+const main = async (
+  fontProjectRoot: string,
+  topLevelFolders: string[],
+  skipCount: number = 0
+) => {
   // Get all subfolders immediately in the top level folders
   const subfolders: string[] = (
     await Promise.all(
       topLevelFolders.map(async (folder) => {
         const subfolders = await fs.readdir(
-          path.join(__dirname, `../../cloned-projects/fonts/${folder}`)
+          path.join(__dirname, `${fontProjectRoot}/${folder}`)
         );
         // Filter out system files and hidden files
         const validSubfolders = subfolders.filter(
@@ -358,7 +383,7 @@ const main = async (topLevelFolders: string[], skipCount: number = 0) => {
   for (let i = skipCount; i < subfolders.length; i++) {
     const subfolder = subfolders[i];
     console.log(`Processing ${i + 1}/${subfolders.length}: ${subfolder}`);
-    const result = await scrapeAndSaveFont(subfolder);
+    const result = await scrapeAndSaveFont(fontProjectRoot, subfolder);
     results.push(result);
     await delay(100);
   }
@@ -376,10 +401,12 @@ const main = async (topLevelFolders: string[], skipCount: number = 0) => {
   );
 };
 
+const FONT_PROJECT_ROOT = "../../cloned-projects/fonts";
+
 // To run this, uncomment the line below and then in Terminal: bun src/script.ts
 
-// main(["ufl", "apache", "ofl"]);
+// main(FONT_PROJECT_ROOT, ["ufl", "apache", "ofl"]);
 
-// main(["ufl"]);
-// main(["apache"]);
-// main(["ofl"], 474);
+// main(FONT_PROJECT_ROOT, ["ufl"]);
+// main(FONT_PROJECT_ROOT, ["apache"]);
+// main(FONT_PROJECT_ROOT, ["ofl"], 474);
