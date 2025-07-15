@@ -243,7 +243,7 @@ export const getSummaryTextAdvanced = async (
 
 Do not use negations (e.g., "not serious"); only specify what the font is. Feel free to omit any information that may cause confusion. E.g. don't say "sans serif", just say "sans". Avoid markdown, code blocks, or extra commentary. Respond with a single, well-structured, comma-separated list or a short paragraph of 20 to 30 descriptors and relevant phrases that best capture the font's essence for semantic search. Do not repeat yourself.`;
   console.log(
-    "attmpting to get advanced summary with summary length",
+    "attempting to get advanced summary with summary length",
     simpleSummary.length
   );
   try {
