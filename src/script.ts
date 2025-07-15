@@ -234,20 +234,50 @@ export const getSummaryTextSimple = (
 export const getSummaryTextAdvanced = async (
   simpleSummary: string
 ): Promise<string> => {
-  const SYSTEM_PROMPT = `You are a Machine Learning expert. The user will describe a font to you. You will respond with a list of words and phrases that capture the nature of that font in terms that make it absolutely perfect for a text embedding. You will summarise all the important qualities about the font. You will not use any words that are negated, because you know that in the context of an embedding they confuse the result. You will expand on the description with relevant synonyms. You may list some situations where a font like this would be appropriate. You may include the font name and designer name if it's unlikely to cause confusion. No markdown, no chit chat, just a comma-separated list of approximately 30 descriptors and relevant phrases.`;
+  const SYSTEM_PROMPT = `You are an expert in semantic embeddings for fonts. The user will provide a description of a font. Your task is to generate a highly descriptive, information-rich text that is ideal for use as an embedding. Focus on the essential characteristics of the font, including:
 
-  const response = await clientMistral.chat.complete({
-    model: "mistral-medium-latest",
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: simpleSummary },
-    ],
-  });
+- The font's name and designer (if relevant and not misleading)
+- Its style, category, and notable typographic features (e.g., "serif", "rounded", "condensed", "monoline")
+- Descriptors that capture the mood, intended use, or unique qualities (e.g., "playful", "futuristic", "for headlines")
+- Any relevant context, such as the year of creation or typical use cases
 
-  const aiSummary = response.choices?.[0]?.message?.content || simpleSummary;
-  // "Trim" in this context means remove any quotes that may be wrapping the summary
-  const trimmedSummary = String(aiSummary).replace(/^"|"$/g, "");
-  return trimmedSummary;
+Do not use negations (e.g., "not serious"); only specify what the font is. Feel free to omit any information that may cause confusion. E.g. don't say "sans serif", just say "sans". Avoid markdown, code blocks, or extra commentary. Respond with a single, well-structured, comma-separated list or a short paragraph of 20 to 30 descriptors and relevant phrases that best capture the font's essence for semantic search. Do not repeat yourself.`;
+  console.log(
+    "attmpting to get advanced summary with summary length",
+    simpleSummary.length
+  );
+  try {
+    const response = await clientMistral.chat.complete({
+      model: "mistral-medium-latest",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: simpleSummary },
+      ],
+    });
+    // Print some details about the response for debugging/inspection
+    if (response.usage) {
+      console.log("Mistral API usage:", response.usage);
+    }
+    if (
+      response.choices &&
+      response.choices[0] &&
+      response.choices[0].message
+    ) {
+      console.log(
+        "AI summary (first 200 chars):",
+        response.choices[0].message.content?.slice(0, 200)
+      );
+    }
+
+    const aiSummary = response.choices?.[0]?.message?.content || simpleSummary;
+    // "Trim" in this context means remove any quotes that may be wrapping the summary
+    const trimmedSummary = String(aiSummary).replace(/^"|"$/g, "");
+    return trimmedSummary;
+  } catch (error) {
+    console.error("Error in getSummaryTextAdvanced:", error);
+    // Fallback to the simple summary if there's an error
+    return simpleSummary;
+  }
 };
 
 /** Returns stringified embeddings, as that's what Supabase will want. Handles batches of inputs.

@@ -6,7 +6,9 @@ This cookbook will assume you know your way around these tools. For a more acces
 
 The use case: you're creating a website or logo and you need a font that captures something abstract like "silent sophistication" or "crisp clean with a little bit of soul". You can click around on Google Fonts, but the search function there seems to expect you to know the names of the fonts. You don't know the names of the fonts, that's why you're searching!
 
-A font finder has been the most requested feature on brandmint over the last few weeks (from an admittedly modest dataset). The strangest part is I can't find an existing example anywhere online. I found one font search website discussed on Reddit but that site has since gone defunct, so presumably the demand here is pretty light. But still, it baffles me that Google Fonts has made no attempt to help folks out in this simple situation.
+A font finder has been the most requested feature on brandmint over the last few weeks (from an admittedly modest dataset). The strangest part is I can't find an existing example of semantic search for fonts anywhere online. I found one font search website discussed on Reddit but that site has since gone defunct, so presumably the demand here is pretty light. But still, it baffles me that Google Fonts has made no attempt to help folks out in this simple situation.
+
+![Step 1 Screenshot](./screenshots/google-exciting-fonts.png)
 
 "Sorry, we couldn't find any exciting fonts."
 
@@ -32,7 +34,7 @@ The fonts in this project are organized by license type.
 
 There are lots of other folders that seem promising but are distractions for our simple build. If you're curious:
 
-- `tags/` - Contains classification tags for fonts. This is a newer addition to the repo. For example, it may include files categorizing fonts by characteristics like writing system, style, or other attributes. This might help in classifying our fonts, but I omitted it to keep things simple.
+- `tags/` - Contains classification tags for fonts. This might well help in classifying our fonts, but I found I didn't need it and omitted it to keep things simple.
 - `axisregistry/` - Downstream version of a Google repo which defines deeper variable support for some fonts.
 - `lang/` – Downstream version of a Google repo that contains data on languages, scripts, and regions used to classify fonts’ language support on Google Fonts.
 - `cc-by-sa/` - Educational material for the Google Fonts website.
@@ -40,13 +42,13 @@ There are lots of other folders that seem promising but are distractions for our
 
 ### Structure Within Font Folders
 
-Within each license directory (`ofl/`, `apache/`, `ufl/`), font families are organized by family name. Each family has its own subfolder named after the font family. Folder naming conventions for families generally use lowercase letters and no spaces or special characters (often just removing spaces from the font's name). For example, "Open Sans" is found in `ofl/opensans/`.
+Within each of the three important license directories (`ofl/`, `apache/`, `ufl/`), font families are organized by family name. Each family has its own subfolder named after the font family. Folder naming conventions for families generally use lowercase letters and no spaces or special characters (often just removing spaces from the font's name). For example, "Open Sans" is found in `ofl/opensans/`.
 
 Each font family folder typically contains:
 
 - FontFamily-Style.ttf - The actual font binaries for each style
 
-  - Static fonts look like FontFamily-Regular.ttf, FontFamily-Bold.ttf etc
+  - Static fonts look like `FontFamily-Bold.ttf` etc
   - Variable fonts follow the convention `FontFamily[wdth,wght].ttf` with the values in brackets indicating which axis tags are supported
 
 - METADATA.pb: Machine-readable metadata including:
@@ -57,13 +59,14 @@ Each font family folder typically contains:
   - Category (Sans-serif, Serif, Display, etc.)
   - Language/script support
   - Version info
-  - **METADATA.pb is the authoritative source for building an index of the fonts. It can tell us the family’s name, styles available, designer, license, and classification.**
+  - **This is the main data source for building our index!**
 
-- DESCRIPTION.en_us.html: English description of the font family, typically a paragraph or two about its history and design. Some of these descriptions are quite sweet.
+- DESCRIPTION.en_us.html: English description of the font family, typically a paragraph or two about its history and design.
 
-  - "Maiden Orange is a light and festive slab serif font inspired by custom hand lettered 1950s advertisements."
-  - "Kosugi is a Gothic design, [...] it evokes the Japanese cedar trees that have straight and thick trunks and branches."
-  - **Sometimes there is no description doc, or it is present but blank. In those cases we will seek out a fallback document of `article/ARTICLE.en_us.html`**
+  - Some of these descriptions are quite sweet.
+    - "Maiden Orange is a light and festive slab serif font inspired by custom hand lettered 1950s advertisements."
+    - "Kosugi is a Gothic design, [...] it evokes the Japanese cedar trees that have straight and thick trunks and branches."
+  - Sometimes there is no description doc, or it is present but blank. In those cases we will seek out a fallback document of `article/ARTICLE.en_us.html`
 
 - LICENSE.txt: The full license text (may be OFL.txt, UFL.txt depending on license type). These are all standardized based on parent folders, so for our purpose just the descriptor of the license from METADATA.pb should be sufficient.
 
@@ -103,8 +106,8 @@ For your font data keep it as tight as you can while still providing a good sear
 - year (number - just the year when the font was added to Google Fonts)
 - license (string)
 - copyright (string)
-- category (string? e.g. MONOSPACE | DISPLAY)
-- stroke (string e.g. SANS_SERIF | SERIF)
+- category (string e.g. MONOSPACE | DISPLAY)
+- stroke (string e.g. SANS_SERIF | SERIF | SLAB_SERIF)
 - ai_descriptors (string array)
 - description_p1 (string - just the first paragraph from the description html docs)
 - summary_text_v1 (string - this is what we'll transform into a vector)
@@ -124,8 +127,8 @@ CREATE TABLE public.fonts (
     license TEXT,
     copyright TEXT,
 
-    category TEXT,  -- e.g. MONOSPACE, DISPLAY, HANDWRITING, - populate "classifications" here as well (space separated if multiple)
-    stroke TEXT,    -- e.g. SANS_SERIF, SERIF
+    category TEXT,
+    stroke TEXT,
     ai_descriptors TEXT[],
     description_p1 TEXT,
     summary_text_v1 TEXT,
@@ -145,7 +148,7 @@ SIDENOTE: It's a pity we have to treat each typeface family as a single unit. Ty
 - ExtraBold 800
 - Black 900
 
-Of course there is a huge difference between ExtraLight Arial and ExtraBold Arial and the adjectives we might use to describe them, but we have to simplify somewhere. If there's user demand for more granular entries they can always be added in a future version.
+If you're looking for the perfect font there will be times when the answer is ExtraLight Arial and some very different times when the answer is ExtraBold Arial. That said, we have to simplify somewhere. If there's user demand for more granular entries they can always be added in a future version.
 
 You may get a security warning about Row Level Security. You can manually enable that on the table after creating it, then click "Add RLS Policy". When choosing a policy, you can just select from one of the templates to enable read access for all users.
 
@@ -163,7 +166,7 @@ This will occupy 5.6 GB of storage on your machine.
 
 I'm using TypeScript.
 
-First I create a simple client object with OpenAI (Mistral will come later):
+First I create a simple client object with Mistral:
 
 ```ts
 import { Mistral } from "@mistralai/mistralai";
@@ -280,6 +283,10 @@ However, to assemble this data we need to collect info from a few different plac
 
 In our case, there are three stations:
 
+1. All the text data from the Metadata.pb file
+2. That text plus any other data we can derive from html files, plus an AI assessment of a picture of text written in that font, all packaged ready to fetch an embedding
+3. The above package with the embedding added to it
+
 ```ts
 type FontBasics = {
   name: string; // from METADATA.pb
@@ -303,15 +310,17 @@ type FontDBReady = FontEmbeddingReady & {
 };
 ```
 
-## Step 7 - Write function to assemble FontBasics object
+## Step 7 - Assemble the FontBasics object
 
 My full ETL script can be found here:
 
-[https://github.com/yablochko8/semantic-search-fonts/blob/main/src/script.ts]
+https://github.com/yablochko8/semantic-search-fonts/blob/main/src/script.ts
 
 I've kept it heavily commented so if you're following this guide with the exact same source data now is the time to dive into that code.
 
-Assembling the FontBasics object is the cheap and easy part:
+Assembling the FontBasics object is cheap, easy, and all local.
+
+Key parts:
 
 1. Basic validation - confirm the font is not on an exclusion list (we don't want notation fonts like jsmath) and that all the expected files are present
 2. parseFontBasicsFromPb - gets the basic text values from the `METADATA.pb` file
@@ -321,30 +330,29 @@ Assembling the FontBasics object is the cheap and easy part:
 
 For my first pass at this I thought I could rely on the text descriptions, but the descriptions sometimes gave offbeat results.
 
-(If you're curious I've left this version live on brandmint, just select Algorithm: V1)
+(If you're curious I've left this version live on brandmint font finder, just select Algorithm: V1)
 
-To get more standardized assessment, your function flow will look like this:
+To get more standardized assessment, our function flow will look like this:
 
-1. generateSamplePng - take in a TTF file and spit out the buffer of a representative image in that font, keep it as a buffer, that's the format you'll want it in to pass it to an AI model
+1. generateSamplePng - take in a TTF file and spit out the buffer of a representative image in that font. We keep it as a buffer, that's the format we'll want it in to pass it to an AI model.
 2. getDescriptors - pass the image buffer to a multimodal AI model (I used Mistral's `pixtral-12b`)
-3. getEmbeddingText - pass everything you know to an LLM and ask it generate text that can be used for embedding. I didn't expect to need this but here's the problem, sometimes the name of a font is hugely useful ("Orbitron" font is nice and futuristic) and sometimes it's hugely unhelpful ("Are you serious" is decidedly not serious, but elevates the joky font to the top of results for a "serious" query). Let an LLM figure this out.
+3. getSummaryTextSimple - package all the information we know into a single summary describing the font in consistent terms. My first pass at this was basically: `${name} is a ${adjectives} font designed by ${designer} in ${year}. ${p1Description}`
 
-## Step 9 - Get an embedding of your text
+## Step 9 - Transform summary into text that is well suited to embedding
 
-Good text for embedding should be as descriptive and information-rich as possible, focusing on the essential characteristics of the item you want to represent. For fonts, this means including:
+I didn't expect to need this step but here's the problem, sometimes the name of a font is hugely useful ("Orbitron" font is nice and futuristic) and sometimes it's hugely unhelpful ("Are you serious" is decidedly not serious, but elevates the joky font to the top of results for a "serious" query). We can let an LLM figure this out.
 
-- The font's name and designer (if relevant and not misleading)
-- Its style, category, and any notable typographic features (e.g., "serif", "rounded", "condensed", "monoline")
-- Descriptors that capture the mood, intended use, or unique qualities (e.g., "playful", "futuristic", "for headlines")
-- Any relevant context, such as the year of creation or typical use cases
+Good text for embedding should be as descriptive and information-rich as possible, focusing on the essential characteristics of the item you want to represent. We want to avoid negations (e.g., "not serious") as they confuse embedding models. The text should only specify what the font _is_ rather than what it is not. The ideal is a comma-separated list or a short, well-structured paragraph. We can also include the font's name and designer if they're relevant and not misleading.
 
-We want to avoid negations (e.g., "not serious") as they confuse embedding models. The text should only specify what the font _is_ rather than what it is not. Use a comma-separated list or a short, well-structured paragraph. The more specific and concrete the description, the better the embedding will capture the nuances for semantic search.
+## Step 10 - Get an embedding of your text
 
-## Step 8 - Save our fonts to the database
+We pass our embedding-ready text, which I call "summaryTextAdvanced" to our getEmbeddings function, and store the resulting vector in our `embedding_mistral_v1` field. Supabase expects
 
-At this point I ran my full ETL script, as there are less than 2,000 entries so it's a small enough dataset that it seemed silly to split it out.
+## Step 11 - Save our fonts to the database
 
-## Step 9 - Enjoy the fact that we DON'T need to create an index
+Usually for an ETL we would run some test writes of full data, but given that there are fewer than 2,000 entries it's such a small dataset that it seemed silly to split it out. So at this point we just run the full ETL script,
+
+## Step 12 - Enjoy the fact that we DON'T need to create an index
 
 Because there are fewer than 10,000 entries in this data, we definitely do not need to create an index.
 
@@ -352,11 +360,11 @@ We should get exact results within a few milliseconds. An index would complicate
 
 If you're dealing with a larger dataset, you can see more details on adding an index in [my previous guide](https://lui.ie/guides/semantic-search-colors).
 
-## Step 10 - Create an RPC Function to search by embedding
+## Step 13 - Create an RPC Function to search by embedding
 
-Usually when you want to call this DB from code you'll use the supabase SDK, and that will have predefined functions to let you add, delete, update etc.
+Usually when we want to call a Supabase database from code we use the Supabase SDK, and that will have predefined functions to let you add, delete, update etc.
 
-Calling for results sorted by embedding distance is beyond the scope of the current Supabase SDK, so we'll need to create our own custom function that we can call in a controlled way.
+However, calling for results sorted by embedding distance is beyond the scope of their current SDK, so we'll need to create our own custom function that we can call in a controlled way.
 
 This is called an RPC (Remote Procedure Call) Function.
 
@@ -407,17 +415,17 @@ Some explanations:
 
 `language sql stable` - This tells Postgres that this is a SQL function that will always return the same output for the same inputs, as long as the underlying data hasn't changed. Unlike 'volatile' functions which may return different results even with identical inputs, 'stable' functions are deterministic within a single query. This allows Postgres to optimize the function calls better, since it knows the results will be consistent for the same parameters within a transaction.
 
-## Step NN - Update your types file
+## Step 14 - Update your types file
 
-You're going to call this named function from your code, so you want Intellisense to expect it. Use your command that looks like this:
+We're going to call this named function from our code, so we want Intellisense to expect it. We run the command that we created in Step 5 above.
 
 ```sh
 npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/types/supabase.ts
 ```
 
-## Step 11 - Run a Test Query
+## Step 15 - Run a Test Query
 
-At this stage I only have 50 entries in the database, but that's enough to test against.
+Remember we can't query directly using the query string, we need to convert it into an embedding and query with the embedding.
 
 ```ts
 const testQuery = async () => {
@@ -440,7 +448,7 @@ https://fonts.google.com/specimen/Belleza
 
 Serving up sans serif realness, success!
 
-## Step 13 - Integrate with Frontend
+## Step 16 - Integrate with Frontend
 
 In my case that's https://brandmint.ai/font-finder
 
@@ -509,8 +517,15 @@ Then inject the name into the JSX...
 
 ## Other notes
 
-- This workflow was similar to something similar I did [with colors](https://lui.ie/guides/semantic-search-colors) last week, but still took in the order of 2 days. The hardest work to optimize is understanding a new dataset.
-- Embedding costs for this project were trivial. Less than $0.01 for Mistral.
+- This workflow was similar to something similar I did [with colors](https://lui.ie/guides/semantic-search-colors) last week. I thought it would be quicker to build because I konw my round the tooling, but it took longer. The hardest work to optimize is understanding a new dataset.
+- Cost breakdown:
+  - €0.17 mistral-embed (text embedding)
+  - €0.70 mistral-medium-latest (LLM for text transformation)
+  - €0.64 pixtral-12b (multimodal LLM for image characterization)
+
+Total = €1.51
+
+I probably could have indulged larger models but mainly didn't because I was too impatient to wait for better but slower models.
 
 ## Links
 
@@ -522,6 +537,7 @@ Then inject the name into the JSX...
 
 - Distance Metrics https://chrisloy.dev/post/2025/06/30/distance-metrics
 - Semantic Search https://supabase.com/docs/guides/ai/semantic-search
+- Build your own Color Search Engine https://lui.ie/guides/semantic-search-colors
 
 ### Try It Out
 

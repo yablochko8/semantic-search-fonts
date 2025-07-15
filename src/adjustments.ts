@@ -70,7 +70,7 @@ const rewriteSummaries20250714 = async (
 
 // Run these one at a time!
 // bun --watch src/adjustments.ts
-rewriteSummaries20250714(0);
+// rewriteSummaries20250714(0);
 // rewriteSummaries20250714(1);
 // rewriteSummaries20250714(2);
 // etc
