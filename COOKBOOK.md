@@ -60,31 +60,30 @@ Within each of the three important license directories (`ofl/`, `apache/`, `ufl/
 
 Each font family folder typically contains:
 
-- FontFamily-Style.ttf - The actual font binaries for each style
+**FontFamily-Style.ttf (the actual font binaries for each style)**
 
-  - Static fonts look like `FontFamily-Bold.ttf` etc
-  - Variable fonts follow the convention `FontFamily[wdth,wght].ttf` with the values in brackets indicating which axis tags are supported
+- Static fonts look like `FontFamily-Bold.ttf` etc
+- Variable fonts follow the convention `FontFamily[wdth,wght].ttf` with the values in brackets indicating which axis tags are supported
 
-- METADATA.pb: Machine-readable metadata including:
+**METADATA.pb (machine-readable metadata)**
 
-  - Family name and available styles
-  - Designer/foundry info
-  - License type
-  - Category (Sans-serif, Serif, Display, etc.)
-  - Language/script support
-  - Version info
-  - **This is the main data source for building our index!**
+- Family name and available styles
+- Designer/foundry info
+- License type
+- Category (Sans-serif, Serif, Display, etc.)
+- Language/script support
+- Version info
 
-- DESCRIPTION.en_us.html: English description of the font family, typically a paragraph or two about its history and design.
+**DESCRIPTION.en_us.html (English description of the font family, typically a paragraph or two about its history and design)**
 
-  - Some of these descriptions are quite sweet.
-    - "Maiden Orange is a light and festive slab serif font inspired by custom hand lettered 1950s advertisements."
-    - "Kosugi is a Gothic design, [...] it evokes the Japanese cedar trees that have straight and thick trunks and branches."
-  - Sometimes there is no description doc, or it is present but blank. In those cases we will seek out a fallback document of `article/ARTICLE.en_us.html`
+- Some of these descriptions are quite sweet: "Maiden Orange is a light and festive slab serif font inspired by custom hand lettered 1950s advertisements"; "Kosugi is a Gothic design, [...] it evokes the Japanese cedar trees that have straight and thick trunks and branches."
+- Sometimes there is no description doc, or it is present but blank. In those cases we will seek out a fallback document of `article/ARTICLE.en_us.html`
 
-- LICENSE.txt: The full license text (may be OFL.txt, UFL.txt depending on license type). These are all standardized based on parent folders, so for our purpose just the descriptor of the license from METADATA.pb should be sufficient.
+**LICENSE.txt** (full license text)
 
-There seems to be some variance between folders, but the vast majority of folders I explored had the above structure, so that should be enough for us to work with.
+- This may be OFL.txt or UFL.txt depending on license type. These are all standardized based on parent folders, so for our purpose just the descriptor of the license from METADATA.pb should be sufficient.
+
+There seems to be some variance between folders, but the vast majority of folders I explored had the above structure.
 
 ## Step 1 - Create Your Postgres Database and Add Vector Extension
 
@@ -528,13 +527,15 @@ Then inject the name into the JSX...
 </div>
 ```
 
-## Other notes
+## Time & Cost
 
-- This took much longer to build than the color search engine from last week, a reminder that the hardest piece of work to optimize is understanding a new dataset.
-- Cost breakdown:
-  - €0.17 mistral-embed (text embedding)
-  - €0.70 mistral-medium-latest (LLM for text transformation)
-  - €0.64 pixtral-12b (VLM / multimodal LLM for image characterization)
+This probably took about 20 hours including write up, much longer than it took to build the color search engine last week. A reminder that you can learn the tools but finding your way around a new dataset will always take time.
+
+Cost breakdown:
+
+- €0.17 mistral-embed (text embedding)
+- €0.70 mistral-medium-latest (LLM for text transformation)
+- €0.64 pixtral-12b (VLM / multimodal LLM for image characterization)
 
 Total = €1.51
 
