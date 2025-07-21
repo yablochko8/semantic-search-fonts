@@ -224,7 +224,7 @@ const testRun = async () => {
 testRun();
 ```
 
-To run this, I use `bun`. So the Terminal command is:
+This should run fine with Node. Personally I use Bun for simple scripts like this, out of habit.
 
 ```sh
 bun src/script.ts
