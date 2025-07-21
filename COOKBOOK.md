@@ -176,7 +176,7 @@ This will occupy 5.6 GB of storage on your machine.
 
 ## Step 4 - Connect our codebase to Mistral
 
-For this project I'm using Mistral models throughout and coding with with TypeScript.
+For this project I'm using Mistral models throughout and coding with TypeScript.
 
 First I create a simple client object to call Mistral:
 
@@ -461,7 +461,7 @@ https://fonts.google.com/specimen/Belleza
 
 Serving up sans serif realness, success!
 
-And of course to if we're looking for something exciting, we have now have the entire catalog ranked by exciting-ness:
+And of course to if we're looking for something exciting, we now have the entire catalog ranked by exciting-ness:
 
 ![Exciting results on Font Finder](./screenshots/exciting-results.png)
 
