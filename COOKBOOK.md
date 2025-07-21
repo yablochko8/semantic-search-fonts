@@ -1,24 +1,38 @@
-# Build Your Own Font Search Engine
+# Using Vision Language Models to Index and Search Fonts
 
-### How to create a semantic search engine for fonts using Google Fonts, Supabase, and Mistral
+### Aka: How to build a font search engine using Google Fonts, Supabase, and Mistral
 
-This cookbook will assume you know your way around these tools. For a more accessible tutorial on semantic search, check out my guide on how to [build your own color search engine](https://lui.ie/guides/semantic-search-colors) which is a bit more beginner-friendly. This time I'll only use Mistral.
+Over the last few weeks the most requested feature on brandmint has been for a "font finder".
 
 The use case: you're creating a website or logo and you need a font that captures something abstract like "silent sophistication" or "crisp clean with a little bit of soul". You can click around on Google Fonts, but the search function there seems to expect you to know the names of the fonts. You don't know the names of the fonts, that's why you're searching!
 
-A font finder has been the most requested feature on brandmint over the last few weeks (from an admittedly modest dataset). The strangest part is I can't find an existing example of semantic search for fonts anywhere online. I found one font search website discussed on Reddit but that site has since gone defunct, so presumably the demand here is pretty light. But still, it baffles me that Google Fonts has made no attempt to help folks out in this simple situation.
+This is a nice search problem. The solution looks something like this:
 
-![Step 1 Screenshot](./screenshots/google-exciting-fonts.png)
+![Font Search = f (Query) x (Font Categories x Font Visuals x Usage Data)](./screenshots/sketch-1.png)
 
-"Sorry, we couldn't find any exciting fonts."
+There are plenty of ways to skin this cat, many of them decades old, so I was a bit surprised to find that Google Fonts hasn't made any effort to solve this. If you're looking for an "exciting" font there, this is what they'll tell you:
 
-Strictly speaking we're not talking about fonts (e.g. Arial Italic Size 15) or typefaces (e.g. Arial Italic), but _families of typeface_ (e.g. Arial). But the distinction has blurred over time and "fonts" just rolls off the tongue more easily, so I'll use that term throughout this guide.
+!["Sorry, we can't find any exciting fonts."](./screenshots/google-exciting-fonts.png)
 
-The font finder tool itself is here:
+They can't find any exciting fonts?!
+
+Don't believe them, there many exciting fonts out there! A _great_ solution would include usage data and a wide catalog, but as an immediate exercise we can use new - or newly cheap - AI services to come up with a _good_ solution and solve this problem.
+
+![Font Search = f (Query) x (Font Categories x Font Visuals x Usage Data)](./screenshots/sketch-2.png)
+
+The most notable part of this is being able to send a picture of some text to a VLM and have it describe the qualities of the font with reasonable success. From there, it's just a question of packaging up the everything into embeddings and using vector search.
+
+Sidenote I: This cookbook will assume you know your way round embeddings and the like. If you're new to vector search check out my guide on how to [build your own color search engine](https://lui.ie/guides/semantic-search-colors) which is a bit more beginner-friendly.
+
+Sidenote II: Strictly speaking we're not talking about fonts (e.g. Arial Italic Size 15) or typefaces (e.g. Arial Italic), but _families of typeface_ (e.g. Arial). But the distinction has blurred over time and "fonts" just rolls off the tongue more easily, so I'll use that term throughout this guide.
+
+I did look more widely for a vector-based / semantic search for fonts and couldn't find a live example anywhere online. I found a font search website discussed on Reddit but that site has since gone defunct, so presumably the demand here is pretty light. Still, a few people have asked for it so I've added it to Brandmint.
+
+The finished product, which I called Font Finder, is here:
 
 https://brandmint.ai/font-finder
 
-Here's how you can build your own:
+And here's how I built it, and how you too can build your own!
 
 ## Step 0 - Understand how the source data is organized
 
@@ -136,7 +150,7 @@ CREATE TABLE public.fonts (
 );
 ```
 
-SIDENOTE: It's a pity we have to treat each typeface family as a single unit. Typically a family will support a number of different "weights". Each weight can be described with a number (e.g. "700") or a word (e.g. "Bold"). The number is standardized in the CSS Fonts specification for `font-weight`, it's not a direct measurement of anything. This gives designers precise control over font weight across, and will be a vital part of a font selection in the wild.
+Sidenote III: It's a pity we have to treat each typeface family as a single unit. Typically a family will support a number of different "weights". Each weight can be described with a number (e.g. "700") or a word (e.g. "Bold"). The number is standardized in the CSS Fonts specification for `font-weight`, it's not a direct measurement of anything. This gives designers precise control over font weight across, and will be a vital part of a font selection in the wild.
 
 - Thin 100
 - ExtraLight 200
@@ -150,8 +164,6 @@ SIDENOTE: It's a pity we have to treat each typeface family as a single unit. Ty
 
 If you're looking for the perfect font there will be times when the answer is ExtraLight Arial and some very different times when the answer is ExtraBold Arial. That said, we have to simplify somewhere. If there's user demand for more granular entries they can always be added in a future version.
 
-You may get a security warning about Row Level Security. You can manually enable that on the table after creating it, then click "Add RLS Policy". When choosing a policy, you can just select from one of the templates to enable read access for all users.
-
 ## Step 3 - Pull in the data source
 
 The Google Fonts repo on GitHub has all the data we need. We're going to start by cloning that repo locally.
@@ -164,9 +176,9 @@ This will occupy 5.6 GB of storage on your machine.
 
 ## Step 4 - Connect our codebase to Mistral
 
-I'm using TypeScript.
+For this project I'm using Mistral models throughout and coding with TypeScript.
 
-First I create a simple client object with Mistral:
+First I create a simple client object to call Mistral:
 
 ```ts
 import { Mistral } from "@mistralai/mistralai";
@@ -288,14 +300,15 @@ In our case, there are three stations:
 3. The above package with the embedding added to it
 
 ```ts
+/** Everything here comes from METADATA.pb*/
 type FontBasics = {
-  name: string; // from METADATA.pb
-  category: string | null; // from METADATA.pb (includes classifications here, space separated if multiple)
-  copyright: string | null; // from METADATA.pb > fonts[0]
-  designer: string | null; // from METADATA.pb
-  license: string | null; // from METADATA.pb
-  stroke: string | null; // from METADATA.pb
-  year: number | null; // from METADATA.pb (first four digits of date_added)
+  name: string;
+  category: string | null; // include classifications here, space separated if multiple
+  copyright: string | null; // Find this in fonts[0]
+  designer: string | null;
+  license: string | null;
+  stroke: string | null;
+  year: number | null; // Just use first four digits of date_added
 };
 
 type FontEmbeddingReady = FontBasics & {
@@ -326,15 +339,15 @@ Key parts:
 2. parseFontBasicsFromPb - gets the basic text values from the `METADATA.pb` file
 3. parseP1FromHtml - I just a short description for each font, so I'm taking the text of the first `<p>` value I can find in either `DESCRIPTION.en_us.html` or inside `article/ARTICLE.en_us.html`
 
-## Step 8 - Add in a vital ingredient: AI assessment of a picture of the font text, and assemble a FontEmbeddingReady object
+## Step 8 - Add in the vital ingredient: AI assessment of a picture of the font text, and assemble a FontEmbeddingReady object
 
 For my first pass at this I thought I could rely on the text descriptions, but the descriptions sometimes gave offbeat results.
 
-(If you're curious I've left this version live on brandmint font finder, just select Algorithm: V1)
+(If you're curious I've left this version live on Brandmint, just select Algorithm: V1)
 
 To get more standardized assessment, our function flow will look like this:
 
-1. generateSamplePng - take in a TTF file and spit out the buffer of a representative image in that font. We keep it as a buffer, that's the format we'll want it in to pass it to an AI model.
+1. generateSamplePng - take in a TTF file and spit out the buffer of a representative image in that font. We keep it as a buffer, that's the format we'll want it in to pass it to any external AI provider.
 2. getDescriptors - pass the image buffer to a multimodal AI model (I used Mistral's `pixtral-12b`)
 3. getSummaryTextSimple - package all the information we know into a single summary describing the font in consistent terms. My first pass at this was basically: `${name} is a ${adjectives} font designed by ${designer} in ${year}. ${p1Description}`
 
@@ -411,7 +424,7 @@ AS $$
 $$;
 ```
 
-Some explanations:
+For the curious:
 
 `language sql stable` - This tells Postgres that this is a SQL function that will always return the same output for the same inputs, as long as the underlying data hasn't changed. Unlike 'volatile' functions which may return different results even with identical inputs, 'stable' functions are deterministic within a single query. This allows Postgres to optimize the function calls better, since it knows the results will be consistent for the same parameters within a transaction.
 
@@ -448,13 +461,13 @@ https://fonts.google.com/specimen/Belleza
 
 Serving up sans serif realness, success!
 
+And of course to if we're looking for something exciting, we now have the entire catalog ranked by exciting-ness:
+
+![Exciting results on Font Finder](./screenshots/exciting-results.png)
+
 ## Step 16 - Integrate with Frontend
 
-In my case that's https://brandmint.ai/font-finder
-
-![Demo 1 Screenshot](./screenshots/demo-1.png)
-
-The server code matches the pattern of a testQuery above.
+Integrating with a production service is fairly straightforward, the server code matches the pattern of a testQuery above.
 
 On the frontend, the only novel piece here really is having to load lots of fonts dynamically on the fly.
 
@@ -517,28 +530,28 @@ Then inject the name into the JSX...
 
 ## Other notes
 
-- This workflow was similar to something similar I did [with colors](https://lui.ie/guides/semantic-search-colors) last week. I thought it would be quicker to build because I konw my round the tooling, but it took longer. The hardest work to optimize is understanding a new dataset.
+- This took much longer to build than the color search engine from last week, a reminder that the hardest piece of work to optimize is understanding a new dataset.
 - Cost breakdown:
   - €0.17 mistral-embed (text embedding)
   - €0.70 mistral-medium-latest (LLM for text transformation)
-  - €0.64 pixtral-12b (multimodal LLM for image characterization)
+  - €0.64 pixtral-12b (VLM / multimodal LLM for image characterization)
 
 Total = €1.51
 
-I probably could have indulged larger models but mainly didn't because I was too impatient to wait for better but slower models.
+I probably could have indulged in larger models.
 
 ## Links
 
 ### Embedding Models
 
-- Mistral https://docs.mistral.ai/capabilities/embeddings/overview/
+- [Mistral](https://docs.mistral.ai/capabilities/embeddings/overview/)
 
 ### More Reading
 
-- Distance Metrics https://chrisloy.dev/post/2025/06/30/distance-metrics
-- Semantic Search https://supabase.com/docs/guides/ai/semantic-search
-- Build your own Color Search Engine https://lui.ie/guides/semantic-search-colors
+- [Distance Metrics](https://chrisloy.dev/post/2025/06/30/distance-metrics)
+- [Semantic Search](https://supabase.com/docs/guides/ai/semantic-search)
+- [Build your own Color Search Engine](https://lui.ie/guides/semantic-search-colors)
 
 ### Try It Out
 
-If you just want to search for fonts, jump over to the [Font Finder on brandmint.ai](https://brandmint.ai/font-finder)
+If you've scrolled to the end and just want to search for fonts, jump over to the [Font Finder on brandmint.ai](https://brandmint.ai/font-finder)
