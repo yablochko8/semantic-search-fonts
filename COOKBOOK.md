@@ -32,7 +32,7 @@ The finished product, which I called Font Finder, is here:
 
 https://brandmint.ai/font-finder
 
-And here's how I built it, and how you too can build your own!
+Here's how I built it and how you can build your own:
 
 ## Step 0 - Understand how the source data is organized
 
