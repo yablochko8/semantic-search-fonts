@@ -16,11 +16,11 @@ There are plenty of ways to skin this cat, many of them decades old, so I was a 
 
 They can't find any exciting fonts?!
 
-Don't believe them, there many exciting fonts out there! A _great_ solution would include usage data and a wide catalog, but as an immediate exercise we can use new - or newly cheap - AI services to come up with a _good_ solution and solve this problem.
+Don't believe them, there many exciting fonts out there! A _great_ solution would include usage data and a wide catalog, but as an immediate exercise we can use new - or newly cheap - AI services to come up with a _reasonably good_ solution that solves the problem quickly.
 
 ![Font Search = f (Query) x (Font Categories x Font Visuals x Usage Data)](./screenshots/sketch-2.png)
 
-The most notable part of this is being able to send a picture of some text to a VLM and have it describe the qualities of the font with reasonable success. From there, it's just a question of packaging up the everything into embeddings and using vector search.
+The most notable part of this is being able to send a picture of some text to a VLM and have it describe the qualities of the font with reasonable success. From there, it's just a question of packaging up everything into embeddings and using vector search.
 
 Sidenote I: This cookbook will assume you know your way round embeddings and the like. If you're new to vector search check out my guide on how to [build your own color search engine](https://lui.ie/guides/semantic-search-colors) which is a bit more beginner-friendly.
 
